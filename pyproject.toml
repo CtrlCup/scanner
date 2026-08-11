@@ -1,0 +1,51 @@
+[project]
+name = "scanner"
+version = "0.0.1"
+description = "Cross-platform document scanning application with a modern UI"
+requires-python = ">=3.10"
+dependencies = [
+    "PySide6>=6.7",
+    "Pillow>=10.0",
+    "img2pdf>=0.5",
+    "pypdf>=4.0",
+    "ocrmypdf>=16.0",
+    "python-sane>=2.9; sys_platform == 'linux'",
+    "pywin32>=306; sys_platform == 'win32'",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+    "python-semantic-release>=10.0",
+]
+
+[project.scripts]
+scanner = "scanner_app.main:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.semantic_release]
+version_variables = ["src/scanner_app/__init__.py:__version__"]
+version_toml = ["pyproject.toml:project.version"]
+branch = "main"
+tag_format = "v{version}"
+major_on_zero = false
+commit_message = "chore(release): v{version} [skip ci]"
+build_command = false
+
+[tool.semantic_release.changelog]
+changelog_file = "CHANGELOG.md"
+
+[tool.semantic_release.branches.main]
+match = "main"
+prerelease = false
