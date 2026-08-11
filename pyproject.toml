@@ -9,6 +9,7 @@ dependencies = [
     "img2pdf>=0.5",
     "pypdf>=4.0",
     "ocrmypdf>=16.0",
+    "platformdirs>=4.0",
     "python-sane>=2.9; sys_platform == 'linux'",
     "pywin32>=306; sys_platform == 'win32'",
 ]
