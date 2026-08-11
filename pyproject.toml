@@ -40,11 +40,11 @@ version_variables = ["src/scanner_app/__init__.py:__version__"]
 version_toml = ["pyproject.toml:project.version"]
 branch = "main"
 tag_format = "v{version}"
-major_on_zero = false
+major_on_zero = true
+allow_zero_version = true
 commit_message = "chore(release): v{version} [skip ci]"
-build_command = false
 
-[tool.semantic_release.changelog]
+[tool.semantic_release.changelog.default_templates]
 changelog_file = "CHANGELOG.md"
 
 [tool.semantic_release.branches.main]
