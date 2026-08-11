@@ -1,10 +1,19 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
-from scanner_app.backend.base import ColorMode, ScanOptions, ScannerBackend, ScannerDevice, ScanSource
+from scanner_app.backend.base import (
+    ColorMode,
+    ScannerBackend,
+    ScannerDevice,
+    ScanOptions,
+    ScanSource,
+)
 from scanner_app.backend.exceptions import NoScannerFoundError, ScanFailedError
+
+_logger = logging.getLogger(__name__)
 
 # ACHTUNG: Diese Implementierung wurde in einer Linux-Dev-Umgebung ohne Windows-Rechner
 # geschrieben und konnte nicht gegen echte Hardware/COM getestet werden. Property-IDs und
@@ -50,6 +59,7 @@ class WiaScannerBackend(ScannerBackend):
             try:
                 name = info.Properties("Name").Value
             except Exception:
+                _logger.debug("WIA-Gerätename nicht lesbar für %s", info.DeviceID, exc_info=True)
                 name = info.DeviceID
             devices.append(ScannerDevice(device_id=info.DeviceID, display_name=name))
         return devices
@@ -89,7 +99,7 @@ class WiaScannerBackend(ScannerBackend):
             try:
                 item.Properties(prop_id).Value = value
             except Exception:
-                pass  # Gerät/Treiber unterstützt diese Eigenschaft nicht — best effort
+                _logger.debug("WIA-Property %s=%r vom Gerät abgelehnt", prop_id, value, exc_info=True)
 
         try_set(_PROP_HORIZONTAL_RESOLUTION, options.resolution_dpi)
         try_set(_PROP_VERTICAL_RESOLUTION, options.resolution_dpi)

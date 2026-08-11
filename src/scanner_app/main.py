@@ -1,20 +1,13 @@
 import sys
 
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QLabel, QMainWindow
+from PySide6.QtWidgets import QApplication
 
-
-class MainWindow(QMainWindow):
-    def __init__(self) -> None:
-        super().__init__()
-        self.setWindowTitle("Scanner")
-        self.resize(900, 600)
-        placeholder = QLabel("Scanner-UI folgt.", alignment=Qt.AlignmentFlag.AlignCenter)
-        self.setCentralWidget(placeholder)
+from scanner_app.ui.main_window import MainWindow
 
 
 def main() -> None:
     app = QApplication(sys.argv)
+    app.setApplicationName("Scanner")
     window = MainWindow()
     window.show()
     sys.exit(app.exec())

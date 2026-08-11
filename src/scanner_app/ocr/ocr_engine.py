@@ -16,7 +16,7 @@ def apply_ocr(pdf_path: Path | str, languages: list[str] | None = None) -> Path:
     languages sind UI-Anzeigenamen (z.B. "Deutsch"), nicht Tesseract-Codes.
     """
     import ocrmypdf
-    from ocrmypdf.exceptions import EncryptedPdfError, MissingDependencyError, TesseractNotFoundError
+    from ocrmypdf.exceptions import EncryptedPdfError, MissingDependencyError
 
     languages = languages or list(DEFAULT_LANGUAGES)
     codes = [AVAILABLE_LANGUAGES[name] for name in languages]
@@ -34,7 +34,7 @@ def apply_ocr(pdf_path: Path | str, languages: list[str] | None = None) -> Path:
             force_ocr=True,  # unsere PDFs sind frisch aus Bildern erzeugt, nie vorab-OCRt
             progress_bar=False,
         )
-    except (MissingDependencyError, TesseractNotFoundError) as exc:
+    except MissingDependencyError as exc:
         raise OcrError(
             "OCR-Engine (tesseract/qpdf/ghostscript) nicht gefunden oder unvollständig "
             "installiert."

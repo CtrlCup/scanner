@@ -51,4 +51,4 @@ class ScannerBackend(ABC):
 
     def close(self) -> None:
         """Gibt vom Backend gehaltene Ressourcen frei (Gerätehandles, COM, ...)."""
-        return None
+        return

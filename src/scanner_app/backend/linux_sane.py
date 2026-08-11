@@ -1,10 +1,19 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
-from scanner_app.backend.base import ColorMode, ScanOptions, ScannerBackend, ScannerDevice, ScanSource
-from scanner_app.backend.exceptions import ScanFailedError
+_logger = logging.getLogger(__name__)
+
+from scanner_app.backend.base import (
+    ColorMode,
+    ScannerBackend,
+    ScannerDevice,
+    ScanOptions,
+    ScanSource,
+)
+from scanner_app.backend.exceptions import ScanFailedError, ScannerBackendError
 
 # SANE-Treiber unterscheiden sich stark in den unterstützten Optionsnamen/-werten
 # (z.B. "Color"/"Gray" vs. "color"/"gray", "ADF"/"Automatic Document Feeder"). Wir setzen
@@ -26,17 +35,27 @@ class SaneScannerBackend(ScannerBackend):
     def _ensure_init(self) -> None:
         if self._initialized:
             return
-        import sane
+        try:
+            import sane
 
-        sane.init()
+            sane.init()
+        except Exception as exc:
+            raise ScannerBackendError(
+                f"SANE nicht verfügbar (python-sane/libsane installiert?): {exc}"
+            ) from exc
         self._initialized = True
 
     def list_devices(self) -> list[ScannerDevice]:
         self._ensure_init()
         import sane
 
+        try:
+            raw_devices = sane.get_devices()
+        except Exception as exc:
+            raise ScannerBackendError(f"Geräteliste konnte nicht abgerufen werden: {exc}") from exc
+
         devices = []
-        for name, vendor, model, _dev_type in sane.get_devices():
+        for name, vendor, model, _dev_type in raw_devices:
             label = f"{vendor} {model}".strip() or name
             devices.append(ScannerDevice(device_id=name, display_name=label))
         return devices
@@ -73,7 +92,7 @@ class SaneScannerBackend(ScannerBackend):
             try:
                 setattr(dev, name, value)
             except Exception:
-                pass  # Wert außerhalb des vom Treiber unterstützten Bereichs — best effort
+                _logger.debug("SANE-Option %r=%r vom Treiber abgelehnt", name, value, exc_info=True)
 
         try_set("resolution", options.resolution_dpi)
         try_set("mode", _MODE_BY_COLOR_MODE[options.color_mode])
