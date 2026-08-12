@@ -111,9 +111,14 @@ Windows-Umgebung zum lokalen Bauen/Testen.
 selbst — ein von `GITHUB_TOKEN` gepushter Tag löst laut GitHub-Rekursionsschutz keine
 weiteren Workflow-Runs aus, daher der explizite Dispatch mit `tag`-Input). Mit gesetztem
 `tag`-Input werden die gebauten Dateien zusätzlich per `gh release upload` an das
-entsprechende GitHub-Release angehängt. Manueller Lauf ohne Release-Upload:
-`gh workflow run package.yml` (Artefakte dann nur über `gh run download` abrufbar, laufen
-nach ~90 Tagen ab).
+entsprechende GitHub-Release angehängt — jede Datei mit einem beschreibenden Label
+(`Datei#Label`-Syntax), zusätzlich hängt der Job `annotate-release` eine Downloads-Tabelle
+an den Release-Text an. Manueller Lauf ohne Release-Upload: `gh workflow run package.yml`
+(Artefakte dann nur über `gh run download` abrufbar, laufen nach ~90 Tagen ab).
+
+`packaging/scanner.spec` baut plattformabhängig unterschiedlich: Windows als **Onefile**
+(eine einzelne `Scanner.exe`, das ist die als `.exe` erwartete Datei), Linux als **Onedir**
+(Ordner mit `Scanner` + `_internal/`, passend für AppImage/deb/rpm/tar.gz).
 
 `packaging/icon.png`/`icon.ico` sind ein generischer Platzhalter (kein echtes Markenlogo) —
 bei Bedarf ersetzen.

@@ -21,18 +21,27 @@ jobs:
           python-version: "3.11"
       - run: pip install -e ".[build]"
       - run: pyinstaller packaging/scanner.spec --distpath dist --workpath build --noconfirm
-      - name: Zip Windows-Bundle
-        shell: pwsh
-        run: Compress-Archive -Path dist/Scanner/* -DestinationPath dist/Scanner-windows-x86_64.zip
+      - name: Version ermitteln und .exe versionieren
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(python -c "from scanner_app import __version__; print(__version__)")
+          NAME="Scanner-${VERSION}-windows-x86_64.exe"
+          mv dist/Scanner.exe "dist/$NAME"
+          echo "exe_name=$NAME" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
           name: scanner-windows-exe
-          path: dist/Scanner-windows-x86_64.zip
+          path: dist/${{ steps.version.outputs.exe_name }}
       - name: An Release anhängen
         if: ${{ github.event.inputs.tag != '' }}
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ github.event.inputs.tag }}" dist/Scanner-windows-x86_64.zip --clobber --repo ${{ github.repository }}
+        run: |
+          gh release upload "${{ github.event.inputs.tag }}" \
+            "dist/${{ steps.version.outputs.exe_name }}#🪟 Windows 10/11 (64-bit) – portable .exe, kein Installer nötig" \
+            --clobber --repo "${{ github.repository }}"
 
   linux:
     runs-on: ubuntu-latest
@@ -54,6 +63,9 @@ jobs:
           curl -sSL -o /usr/local/bin/appimagetool \
             https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
           sudo chmod +x /usr/local/bin/appimagetool
+      - name: Version ermitteln
+        id: version
+        run: echo "version=$(python3 -c 'from scanner_app import __version__; print(__version__)')" >> "$GITHUB_OUTPUT"
       - run: bash packaging/build_linux.sh
       - uses: actions/upload-artifact@v4
         with:
@@ -63,4 +75,37 @@ jobs:
         if: ${{ github.event.inputs.tag != '' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ github.event.inputs.tag }}" dist/packages/* --clobber --repo ${{ github.repository }}
+          V: ${{ steps.version.outputs.version }}
+        run: |
+          gh release upload "${{ github.event.inputs.tag }}" \
+            "dist/packages/scanner_${V}_amd64.deb#🐧 Linux – Debian/Ubuntu (.deb)" \
+            "dist/packages/scanner-${V}-1.x86_64.rpm#🐧 Linux – Fedora/RHEL/openSUSE (.rpm)" \
+            "dist/packages/Scanner-${V}-x86_64.AppImage#🐧 Linux – universell, portabel (AppImage: chmod +x, dann ausführen)" \
+            "dist/packages/scanner-${V}-linux-x86_64.tar.gz#🐧 Linux – portables Archiv zum manuellen Entpacken (.tar.gz)" \
+            --clobber --repo "${{ github.repository }}"
+
+  annotate-release:
+    needs: [windows, linux]
+    if: ${{ github.event.inputs.tag != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag }}
+        run: |
+          gh release view "$TAG" --repo "${{ github.repository }}" --json body -q .body > body.md
+          if ! grep -q "## Downloads" body.md; then
+            cat >> body.md <<'EOF'
+
+          ## Downloads
+
+          | Datei | Für |
+          |---|---|
+          | `Scanner-*-windows-x86_64.exe` | Windows 10/11 (64-bit) — portable, kein Installer nötig |
+          | `Scanner-*-x86_64.AppImage` | Linux, universell — `chmod +x`, dann ausführen |
+          | `scanner_*_amd64.deb` | Linux — Debian, Ubuntu und Derivate |
+          | `scanner-*-1.x86_64.rpm` | Linux — Fedora, RHEL, openSUSE und Derivate |
+          | `scanner-*-linux-x86_64.tar.gz` | Linux — portables Archiv zum manuellen Entpacken |
+          EOF
+            gh release edit "$TAG" --repo "${{ github.repository }}" --notes-file body.md
+          fi

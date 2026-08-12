@@ -3,11 +3,18 @@
 GitHub Actions (Windows-.exe) mit demselben Befehl verwendet:
 
     pyinstaller packaging/scanner.spec --distpath dist --workpath build
+
+Windows baut bewusst als Onefile (eine einzelne Scanner.exe, kein Ordner drumherum) —
+das ist es, was als ".exe" erwartet wird. Linux bleibt Onedir, da AppImage/deb/rpm ohnehin
+einen Ordner erwarten und Onedir schneller startet (kein Selbst-Entpacken bei jedem Start).
 """
 
 import os
+import sys
 
 from PyInstaller.utils.hooks import collect_all
+
+ONEFILE = sys.platform.startswith("win")
 
 ROOT = os.path.dirname(os.path.abspath(SPECPATH))
 SRC = os.path.join(ROOT, "src")
@@ -36,19 +43,30 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 
-exe = EXE(
-    pyz,
-    a.scripts,
-    [],
-    exclude_binaries=True,
-    name="Scanner",
-    console=False,
-    icon=os.path.join(ROOT, "packaging", "icon.ico"),
-)
-
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.datas,
-    name="Scanner",
-)
+if ONEFILE:
+    exe = EXE(
+        pyz,
+        a.scripts,
+        a.binaries,
+        a.datas,
+        [],
+        name="Scanner",
+        console=False,
+        icon=os.path.join(ROOT, "packaging", "icon.ico"),
+    )
+else:
+    exe = EXE(
+        pyz,
+        a.scripts,
+        [],
+        exclude_binaries=True,
+        name="Scanner",
+        console=False,
+        icon=os.path.join(ROOT, "packaging", "icon.ico"),
+    )
+    coll = COLLECT(
+        exe,
+        a.binaries,
+        a.datas,
+        name="Scanner",
+    )
