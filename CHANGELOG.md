@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v0.5.0 (2026-08-12)
+
+### Documentation
+
+- Add README with feature overview, download table and screenshots
+  ([`3269638`](https://github.com/CtrlCup/scanner/commit/3269638778bd0dd4485a5525ba82e54fb533fed5))
+
+### Features
+
+- Add a real Windows installer (Inno Setup) alongside the portable exe
+  ([`9442417`](https://github.com/CtrlCup/scanner/commit/9442417914f93ffb4dd275efded1e5355899f271))
+
+
 ## v0.4.2 (2026-08-12)
 
 ### Bug Fixes
