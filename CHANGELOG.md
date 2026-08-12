@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.4.1 (2026-08-12)
+
+### Bug Fixes
+
+- Toggle switch handle jumps to wrong position on initial state set
+  ([`ae8137a`](https://github.com/CtrlCup/scanner/commit/ae8137a458682d450d015c436015a81144bef52a))
+
+
 ## v0.4.0 (2026-08-12)
 
 ### Features
