@@ -18,8 +18,11 @@ ONEFILE = sys.platform.startswith("win")
 
 ROOT = os.path.dirname(os.path.abspath(SPECPATH))
 SRC = os.path.join(ROOT, "src")
+ICON_ICO = os.path.join(SRC, "scanner_app", "resources", "icon.ico")
 
-datas = []
+# App-Icon (Taskbar/Titelleiste) wird zur Laufzeit über scanner_app.resources.resource_path
+# geladen — muss daher als Datendatei mit ins Bundle, nicht nur als EXE-Icon.
+datas = [(os.path.join(SRC, "scanner_app", "resources"), "scanner_app/resources")]
 binaries = []
 hiddenimports = []
 
@@ -52,7 +55,7 @@ if ONEFILE:
         [],
         name="Scanner",
         console=False,
-        icon=os.path.join(ROOT, "packaging", "icon.ico"),
+        icon=ICON_ICO,
     )
 else:
     exe = EXE(
@@ -62,7 +65,7 @@ else:
         exclude_binaries=True,
         name="Scanner",
         console=False,
-        icon=os.path.join(ROOT, "packaging", "icon.ico"),
+        icon=ICON_ICO,
     )
     coll = COLLECT(
         exe,

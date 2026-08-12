@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="packaging/icon.png" alt="Scanner Logo" width="96" height="96">
+  <img src="src/scanner_app/resources/icon.png" alt="Scanner Logo" width="96" height="96">
 
   # Scanner
 

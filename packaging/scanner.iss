@@ -29,7 +29,7 @@ SolidCompression=yes
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-SetupIconFile=icon.ico
+SetupIconFile=..\src\scanner_app\resources\icon.ico
 DisableProgramGroupPage=yes
 
 [Languages]

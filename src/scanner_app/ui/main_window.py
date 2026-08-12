@@ -4,6 +4,7 @@ import tempfile
 import uuid
 from pathlib import Path
 
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QHBoxLayout, QMainWindow, QMessageBox, QWidget
 
 from scanner_app.app_settings import AppSettings
@@ -11,6 +12,7 @@ from scanner_app.backend import ScannerBackendError, get_backend
 from scanner_app.models.document import Document, DocumentType, generate_filename
 from scanner_app.ocr.ocr_engine import OcrError
 from scanner_app.ocr.orientation import detect_rotation
+from scanner_app.resources import resource_path
 from scanner_app.scanning_service import save_and_process
 from scanner_app.ui.preview_panel import PreviewPanel
 from scanner_app.ui.settings_dialog import SettingsDialog
@@ -22,6 +24,7 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Scanner")
+        self.setWindowIcon(QIcon(str(resource_path("icon.png"))))
         self.resize(1180, 760)
 
         self.settings = AppSettings()

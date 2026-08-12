@@ -17,6 +17,7 @@ VERSION=$("$PYTHON" -c "from scanner_app import __version__; print(__version__)"
 ARCH=$(uname -m)
 DIST=dist
 PKGROOT=packaging
+ICON_PNG=src/scanner_app/resources/icon.png
 OUT=dist/packages
 mkdir -p "$OUT"
 
@@ -30,7 +31,7 @@ rm -rf "$TARDIR"
 mkdir -p "$TARDIR"
 cp -r "$DIST/Scanner" "$TARDIR/"
 cp "$PKGROOT/scanner-installed.desktop" "$TARDIR/scanner.desktop"
-cp "$PKGROOT/icon.png" "$TARDIR/"
+cp "$ICON_PNG" "$TARDIR/"
 tar -C "$DIST" -czf "$OUT/scanner-$VERSION-linux-$ARCH.tar.gz" "scanner-$VERSION-linux-$ARCH"
 rm -rf "$TARDIR"
 echo "  -> $OUT/scanner-$VERSION-linux-$ARCH.tar.gz"
@@ -41,7 +42,7 @@ rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/bin"
 cp -r "$DIST/Scanner"/* "$APPDIR/usr/bin/"
 cp "$PKGROOT/scanner.desktop" "$APPDIR/"
-cp "$PKGROOT/icon.png" "$APPDIR/scanner.png"
+cp "$ICON_PNG" "$APPDIR/scanner.png"
 cat > "$APPDIR/AppRun" <<'EOF'
 #!/bin/sh
 HERE="$(dirname "$(readlink -f "${0}")")"
@@ -66,7 +67,7 @@ echo "== .deb =="
   --force \
   "$DIST/Scanner/=/opt/scanner" \
   "$PKGROOT/scanner-installed.desktop=/usr/share/applications/scanner.desktop" \
-  "$PKGROOT/icon.png=/usr/share/icons/hicolor/512x512/apps/scanner.png"
+  "$ICON_PNG=/usr/share/icons/hicolor/512x512/apps/scanner.png"
 echo "  -> $OUT/scanner_${VERSION}_amd64.deb"
 
 echo "== .rpm =="
@@ -79,7 +80,7 @@ echo "== .rpm =="
   --force \
   "$DIST/Scanner/=/opt/scanner" \
   "$PKGROOT/scanner-installed.desktop=/usr/share/applications/scanner.desktop" \
-  "$PKGROOT/icon.png=/usr/share/icons/hicolor/512x512/apps/scanner.png"
+  "$ICON_PNG=/usr/share/icons/hicolor/512x512/apps/scanner.png"
 echo "  -> $OUT/scanner-${VERSION}-1.x86_64.rpm"
 
 echo
