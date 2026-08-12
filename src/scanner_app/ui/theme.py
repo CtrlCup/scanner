@@ -193,7 +193,8 @@ def build_stylesheet(mode: str, accent: str) -> str:
 
     QDialog {{ background-color: {palette['panel_bg']}; }}
 
-    #settingsScrollArea, #settingsScrollArea > QWidget > QWidget {{
+    #settingsScrollArea, #settingsScrollArea > QWidget > QWidget,
+    #settingsScrollArea > QWidget > QWidget > QWidget {{
         background-color: {palette['panel_bg']};
         border: none;
     }}

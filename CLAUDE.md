@@ -144,7 +144,7 @@ bei Bedarf ersetzen.
 - `src/scanner_app/pdf/` — PDF-Erstellung/-Aktualisierung aus `Document`, inkl. Löschen/
   Neuordnen/Rotieren bestehender Seiten
 - `src/scanner_app/ui/` — UI-Code (Hauptfenster, Einstellungspanel, Vorschau/Thumbnail-Strip,
-  Einstellungsdialog, Theme/QSS)
+  Einstellungsseite, Theme/QSS)
 - `tests/` — pytest-Tests
 
 ## Funktionslogik (aus Anforderung, nicht aus Code ableitbar)
@@ -171,7 +171,11 @@ bei Bedarf ersetzen.
   auf den reinen LSTM-Engine-Modus (`oem=1`) um. Realistische Erwartungshaltung: Tesseract ist
   primär für Druckschrift trainiert, auch mit diesem Modus ist echte Handschrift nur begrenzt
   zuverlässig erkennbar.
-- Der Einstellungsdialog-Inhalt liegt in einer `QScrollArea` — bei künftigen neuen Optionen
-  nicht direkt in `QVBoxLayout(self)` einhängen, sondern in das `content`-Widget der
-  Scroll-Area, sonst quetscht Qt bei zu viel Inhalt einzelne Zeilen ohne Fehlermeldung
-  unsichtbar zusammen (siehe Git-History zu `settings_dialog.py` für das konkrete Symptom).
+- Einstellungen sind eine **eingebettete Seite** (`SettingsPage`, `QStackedWidget` in
+  `main_window.py`), kein separates Fenster/Dialog — Navigation über Gear-Icon (hin) und
+  „← Zurück"-Button (zurück). Der Seiteninhalt liegt in einer `QScrollArea` mit auf
+  ~640px begrenzter, zentrierter Breite (sonst zieht sich jede Zeile über die volle
+  Fensterbreite); am Ende der `content`-Layout steht bewusst ein `addStretch()`, sonst
+  verteilt Qt überschüssige Höhe auf die Zeilen und bläst sie unnötig auf. Bei künftigen
+  neuen Optionen ins `content`-Widget der Scroll-Area einhängen, nicht direkt in
+  `outer_layout`.

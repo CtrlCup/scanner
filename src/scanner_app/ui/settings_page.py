@@ -6,7 +6,6 @@ from datetime import datetime
 from PySide6.QtCore import QObject, Qt, QThread, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -52,27 +51,39 @@ class _TaskWorker(QObject):
             self.finished.emit(False)
 
 
-class SettingsDialog(QDialog):
-    """Gear-Icon-Dialog: automatisches Drehen, OCR an/aus + Sprachauswahl (Chips mit
-    Installiert-Status, On-Demand-Hintergrund-Download) + optionale Handschrift-Erkennung
-    (nur bei aktiviertem OCR), Theme, Akzentfarbe, Footer mit GitHub-Link.
+class SettingsPage(QWidget):
+    """Eingebettete Einstellungen-Seite (kein separates Fenster): automatisches Drehen,
+    OCR an/aus + Sprachauswahl (Chips mit Installiert-Status, On-Demand-Hintergrund-Download)
+    + optionale Handschrift-Erkennung (nur bei aktiviertem OCR), Theme, Akzentfarbe,
+    Footer mit GitHub-Link. Über backRequested navigiert das Hauptfenster zurück zur
+    Scanner-Ansicht.
     """
 
+    backRequested = Signal()
     accentChanged = Signal(str)
     themeChanged = Signal(str)
     ocrSettingsChanged = Signal()
 
     def __init__(self, settings: AppSettings, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Einstellungen")
-        self.setMinimumWidth(440)
-        self.resize(440, 620)
+        self.setObjectName("rightPanel")
         self._settings = settings
         self._threads: list[QThread] = []
         self._language_chips: dict[str, QPushButton] = {}
 
         outer_layout = QVBoxLayout(self)
         outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
+
+        header = QHBoxLayout()
+        header.setContentsMargins(20, 20, 20, 12)
+        back_button = QPushButton("← Zurück")
+        back_button.setProperty("role", "icon")
+        back_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        back_button.clicked.connect(self.backRequested)
+        header.addWidget(back_button)
+        header.addStretch()
+        outer_layout.addLayout(header)
 
         scroll_area = QScrollArea()
         scroll_area.setObjectName("settingsScrollArea")
@@ -80,11 +91,22 @@ class SettingsDialog(QDialog):
         scroll_area.setFrameShape(QFrame.Shape.NoFrame)
         outer_layout.addWidget(scroll_area)
 
+        # Als eingebettete Seite steht deutlich mehr Breite zur Verfügung als im früheren
+        # Dialog — Inhalt bleibt auf eine lesbare Breite begrenzt und zentriert, statt jede
+        # Zeile über die volle Fensterbreite zu strecken.
+        centering_wrapper = QWidget()
+        centering_layout = QHBoxLayout(centering_wrapper)
+        centering_layout.setContentsMargins(0, 0, 0, 0)
+        scroll_area.setWidget(centering_wrapper)
+
         content = QWidget()
-        scroll_area.setWidget(content)
+        content.setMaximumWidth(640)
+        centering_layout.addStretch()
+        centering_layout.addWidget(content)
+        centering_layout.addStretch()
 
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setContentsMargins(20, 0, 20, 20)
         layout.setSpacing(16)
 
         auto_rotate_row = QHBoxLayout()
@@ -202,6 +224,12 @@ class SettingsDialog(QDialog):
         github_link.setOpenExternalLinks(False)
         github_link.linkActivated.connect(lambda url: QDesktopServices.openUrl(url))
         layout.addWidget(github_link)
+
+        # Als Seite steht mehr Höhe zur Verfügung als im früheren Dialog — überschüssiger
+        # Platz soll hier unten landen, statt dass Qt ihn auf alle Zeilen verteilt (was sie
+        # unnötig aufbläht und die leicht abweichende Hintergrundfarbe einzelner Labels
+        # sichtbar macht).
+        layout.addStretch()
 
     @staticmethod
     def _separator() -> QFrame:

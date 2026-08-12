@@ -15,7 +15,7 @@ from PySide6.QtWidgets import QApplication
 
 from scanner_app.backend.base import ScannerDevice
 from scanner_app.ui.main_window import MainWindow
-from scanner_app.ui.settings_dialog import SettingsDialog
+from scanner_app.ui.settings_page import SettingsPage
 
 
 @pytest.fixture
@@ -136,24 +136,34 @@ def test_auto_rotate_skips_page_rotation_when_no_rotation_detected(window):
 
 
 def test_handwriting_toggle_only_visible_when_ocr_enabled(window):
-    dialog = SettingsDialog(window.settings, window)
-    dialog.show()
+    page = SettingsPage(window.settings)
+    page.show()
     try:
-        assert dialog._ocr_toggle.isChecked() is False
-        assert not dialog._language_section.isVisible()
+        assert page._ocr_toggle.isChecked() is False
+        assert not page._language_section.isVisible()
 
-        dialog._ocr_toggle.setChecked(True)
-        assert dialog._language_section.isVisible()
-        assert dialog._handwriting_toggle.isVisible()
+        page._ocr_toggle.setChecked(True)
+        assert page._language_section.isVisible()
+        assert page._handwriting_toggle.isVisible()
 
-        dialog._ocr_toggle.setChecked(False)
-        assert not dialog._language_section.isVisible()
+        page._ocr_toggle.setChecked(False)
+        assert not page._language_section.isVisible()
     finally:
-        dialog.close()
+        page.close()
 
 
-def test_handwriting_setting_persisted_from_dialog(window):
-    dialog = SettingsDialog(window.settings, window)
-    dialog._handwriting_toggle.setChecked(True)
+def test_handwriting_setting_persisted_from_page(window):
+    page = SettingsPage(window.settings)
+    page._handwriting_toggle.setChecked(True)
     assert window.settings.handwriting_enabled is True
-    dialog.close()
+    page.close()
+
+
+def test_gear_icon_navigates_to_settings_page_and_back(window):
+    assert window._stack.currentWidget() is not window.settings_page
+
+    window.settings_panel.openSettingsRequested.emit()
+    assert window._stack.currentWidget() is window.settings_page
+
+    window.settings_page.backRequested.emit()
+    assert window._stack.currentWidget() is not window.settings_page

@@ -44,7 +44,7 @@
 - **Helles, dunkles oder automatisches Design** — plus wählbare Akzentfarbe, folgt auf
   Wunsch der Systemeinstellung
 
-<img src="docs/screenshots/settings-dialog-dark.png" alt="Einstellungsdialog mit OCR-Sprachauswahl, automatischem Drehen und Theme-Auswahl" width="420">
+<img src="docs/screenshots/settings-page-dark.png" alt="Einstellungsseite mit OCR-Sprachauswahl, automatischem Drehen und Theme-Auswahl" width="420">
 
 ## Download
 

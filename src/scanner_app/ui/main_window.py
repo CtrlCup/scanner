@@ -5,7 +5,14 @@ import uuid
 from pathlib import Path
 
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QApplication, QHBoxLayout, QMainWindow, QMessageBox, QWidget
+from PySide6.QtWidgets import (
+    QApplication,
+    QHBoxLayout,
+    QMainWindow,
+    QMessageBox,
+    QStackedWidget,
+    QWidget,
+)
 
 from scanner_app.app_settings import AppSettings
 from scanner_app.backend import ScannerBackendError, get_backend
@@ -15,9 +22,12 @@ from scanner_app.ocr.orientation import detect_rotation
 from scanner_app.resources import resource_path
 from scanner_app.scanning_service import save_and_process
 from scanner_app.ui.preview_panel import PreviewPanel
-from scanner_app.ui.settings_dialog import SettingsDialog
+from scanner_app.ui.settings_page import SettingsPage
 from scanner_app.ui.settings_panel import SettingsPanel
 from scanner_app.ui.theme import build_stylesheet, resolve_theme_mode
+
+_PAGE_SCANNER = 0
+_PAGE_SETTINGS = 1
 
 
 class MainWindow(QMainWindow):
@@ -32,8 +42,8 @@ class MainWindow(QMainWindow):
         self.document = Document(document_type=DocumentType.PDF)
         self._scan_tmp_dir = Path(tempfile.mkdtemp(prefix="scanner-app-"))
 
-        central = QWidget()
-        layout = QHBoxLayout(central)
+        scanner_view = QWidget()
+        layout = QHBoxLayout(scanner_view)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
@@ -41,17 +51,27 @@ class MainWindow(QMainWindow):
         self.preview_panel = PreviewPanel()
         layout.addWidget(self.settings_panel)
         layout.addWidget(self.preview_panel, stretch=1)
-        self.setCentralWidget(central)
+
+        self.settings_page = SettingsPage(self.settings)
+
+        self._stack = QStackedWidget()
+        self._stack.addWidget(scanner_view)
+        self._stack.addWidget(self.settings_page)
+        self.setCentralWidget(self._stack)
 
         self.settings_panel.scanRequested.connect(self._on_scan_requested)
         self.settings_panel.addPageRequested.connect(self._on_add_page_requested)
-        self.settings_panel.openSettingsRequested.connect(self._open_settings_dialog)
+        self.settings_panel.openSettingsRequested.connect(self._show_settings_page)
         self.settings_panel.deviceChanged.connect(self._on_device_changed)
         self.settings_panel.filetypeChanged.connect(lambda _t: self._update_add_page_enabled())
 
         self.preview_panel.deletePageRequested.connect(self._on_delete_page)
         self.preview_panel.pagesReordered.connect(self._on_pages_reordered)
         self.preview_panel.rotateRequested.connect(self._on_rotate_page)
+
+        self.settings_page.backRequested.connect(self._show_scanner_page)
+        self.settings_page.accentChanged.connect(self._on_accent_changed)
+        self.settings_page.themeChanged.connect(lambda _t: self._apply_theme())
 
         self._apply_theme()
         self._update_add_page_enabled()
@@ -157,11 +177,11 @@ class MainWindow(QMainWindow):
 
     # -- Einstellungen / Theme ----------------------------------------------------
 
-    def _open_settings_dialog(self) -> None:
-        dialog = SettingsDialog(self.settings, self)
-        dialog.accentChanged.connect(self._on_accent_changed)
-        dialog.themeChanged.connect(lambda _t: self._apply_theme())
-        dialog.exec()
+    def _show_settings_page(self) -> None:
+        self._stack.setCurrentIndex(_PAGE_SETTINGS)
+
+    def _show_scanner_page(self) -> None:
+        self._stack.setCurrentIndex(_PAGE_SCANNER)
 
     def _on_accent_changed(self, accent: str) -> None:
         self.settings_panel.apply_accent(accent)
@@ -169,7 +189,7 @@ class MainWindow(QMainWindow):
 
     def _apply_theme(self) -> None:
         # Auf QApplication-Ebene gesetzt (nicht nur auf diesem Fenster), damit auch
-        # eigenständige Top-Level-Dialoge (Einstellungen) zuverlässig mitgestylt werden.
+        # eigenständige Top-Level-Fenster (z.B. QMessageBox) zuverlässig mitgestylt werden.
         mode = resolve_theme_mode(self.settings.theme)
         stylesheet = build_stylesheet(mode, self.settings.accent_color)
         app = QApplication.instance()
