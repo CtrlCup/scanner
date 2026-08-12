@@ -4,7 +4,8 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from PySide6.QtGui import QIcon
+from PySide6.QtCore import QTimer
+from PySide6.QtGui import QDesktopServices, QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
@@ -72,9 +73,21 @@ class MainWindow(QMainWindow):
         self.settings_page.backRequested.connect(self._show_scanner_page)
         self.settings_page.accentChanged.connect(self._on_accent_changed)
         self.settings_page.themeChanged.connect(lambda _t: self._apply_theme())
+        self.settings_page.updateAvailable.connect(self._on_update_available)
 
         self._apply_theme()
         self._update_add_page_enabled()
+
+        # Verzögert, damit der Start-Vorgang der App selbst nicht blockiert/verzögert wird.
+        # Die Prüfung von auto_update_check_enabled erfolgt bewusst erst beim Timer-Feuern
+        # (nicht schon hier beim Scheduling) — Aufrufer wie Tests, die die Einstellung direkt
+        # nach der Konstruktion noch deaktivieren, verhindern damit zuverlässig einen echten
+        # Netzwerkaufruf.
+        QTimer.singleShot(1500, self._maybe_check_for_updates)
+
+    def _maybe_check_for_updates(self) -> None:
+        if self.settings.auto_update_check_enabled:
+            self.settings_page.check_for_updates()
 
     # -- Scannen -----------------------------------------------------------------
 
@@ -186,6 +199,19 @@ class MainWindow(QMainWindow):
     def _on_accent_changed(self, accent: str) -> None:
         self.settings_panel.apply_accent(accent)
         self._apply_theme()
+
+    def _on_update_available(self, info) -> None:
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setWindowTitle("Update verfügbar")
+        box.setText(f"Eine neue Version ist verfügbar: v{info.version}")
+        if info.notes:
+            box.setInformativeText(info.notes[:500])
+        open_button = box.addButton("Release-Seite öffnen", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("Später", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        if box.clickedButton() is open_button:
+            QDesktopServices.openUrl(info.html_url)
 
     def _apply_theme(self) -> None:
         # Auf QApplication-Ebene gesetzt (nicht nur auf diesem Fenster), damit auch

@@ -55,6 +55,15 @@ hier **nicht** getestet werden — nur auf Syntax-/Importebene verifizierbar, ni
 Scanner-Hardware ist hier ebenfalls nicht angeschlossen; SANE-Backend wird gegen `python-sane`
 entwickelt, aber ohne physisches Gerät nur bis zur Geräteerkennung testbar.
 
+**⚠️ Echtes `sane.get_devices()` in diesem Sandbox-Setup kann abstürzen:** Das installierte
+`libsane-epson2`-Backend crasht (nativer Segfault, in Python nicht abfangbar) bei wiederholten
+`sane.init()`/`sane.exit()`-Zyklen im selben Prozess (z.B. viele Tests hintereinander, die je
+ein `MainWindow()` konstruieren) — vermutlich ein Bug in dessen Netzwerk-Geräteerkennung. Deshalb
+verwenden UI-Tests (`tests/test_ui_flow.py`) grundsätzlich ein gemocktes `get_backend()`
+(`_FakeScannerBackend`), nie den echten `SaneScannerBackend` — nicht nur aus
+Geschwindigkeitsgründen, sondern aus Stabilitätsgründen. Beim Schreiben neuer Tests, die
+`MainWindow()` konstruieren, dieses Pattern übernehmen statt echtes SANE laufen zu lassen.
+
 ## Setup
 
 ```bash
@@ -171,6 +180,14 @@ bei Bedarf ersetzen.
   auf den reinen LSTM-Engine-Modus (`oem=1`) um. Realistische Erwartungshaltung: Tesseract ist
   primär für Druckschrift trainiert, auch mit diesem Modus ist echte Handschrift nur begrenzt
   zuverlässig erkennbar.
+- **Update-Check** (`scanner_app/update_checker.py`): fragt die GitHub-Releases-API ab und
+  vergleicht gegen `scanner_app.__version__`. MVP-Scope bewusst begrenzt (siehe Issue #2):
+  informiert nur (Dialog + Link zur Release-Seite), lädt/installiert nichts automatisch — kein
+  Checksummen-/Signatur-Check, kein stiller Ersatz der laufenden Datei. Läuft immer in einem
+  Hintergrund-Thread, schlägt bei fehlendem Internet still fehl (gibt `None` zurück statt zu
+  werfen). Automatischer Start-Check ~1,5s nach Fensteröffnung, abschaltbar über
+  `auto_update_check_enabled`; die Prüfung dieser Einstellung erfolgt bewusst erst beim
+  Timer-Feuern, nicht beim Scheduling (relevant für Tests, die sie direkt danach ändern).
 - Einstellungen sind eine **eingebettete Seite** (`SettingsPage`, `QStackedWidget` in
   `main_window.py`), kein separates Fenster/Dialog — Navigation über Gear-Icon (hin) und
   „← Zurück"-Button (zurück). Der Seiteninhalt liegt in einer `QScrollArea` mit auf

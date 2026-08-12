@@ -13,9 +13,31 @@ from PIL import Image
 from pypdf import PdfReader
 from PySide6.QtWidgets import QApplication
 
-from scanner_app.backend.base import ScannerDevice
+from scanner_app.backend.base import ScannerBackend, ScannerDevice, ScanOptions
 from scanner_app.ui.main_window import MainWindow
 from scanner_app.ui.settings_page import SettingsPage
+
+
+class _FakeScannerBackend(ScannerBackend):
+    """Backend-Doppel für Tests — vermeidet jeden Kontakt mit echtem SANE/python-sane.
+
+    Wiederholte sane.init()/sane.exit()-Zyklen (ein Zyklus pro MainWindow-Konstruktion,
+    also einer pro Test) haben sich als scharfer nativer Absturz im installierten
+    libsane-epson2-Backend erwiesen (Segfault bei der Netzwerk-Geräteerkennung) — von
+    Python aus mit try/except nicht abfangbar. Tests dürfen echte Scanner-Treiber daher
+    grundsätzlich nie berühren, nicht nur aus Geschwindigkeits-, sondern aus
+    Stabilitätsgründen.
+    """
+
+    def __init__(self, devices: list[ScannerDevice]) -> None:
+        self._devices = devices
+
+    def list_devices(self) -> list[ScannerDevice]:
+        return self._devices
+
+    def scan_page(self, device: ScannerDevice, options: ScanOptions, output_path: Path) -> Path:
+        Image.new("RGB", (200, 100), "white").save(output_path)
+        return Path(output_path)
 
 
 @pytest.fixture
@@ -29,11 +51,17 @@ def window(app, tmp_path):
     # damit Tests keine echte lokale App-Installation lesen/verändern.
     from PySide6.QtCore import QSettings
 
-    win = MainWindow()
+    fake_devices = [ScannerDevice(device_id="fake0", display_name="Test-Scanner")]
+    with patch("scanner_app.ui.main_window.get_backend", return_value=_FakeScannerBackend(fake_devices)):
+        win = MainWindow()
+
     win.settings._settings = QSettings(str(tmp_path / "settings.ini"), QSettings.Format.IniFormat)
     win.settings.save_directory = tmp_path / "scans"
+    # Verhindert den echten Netzwerkaufruf, den der verzögerte Start-Update-Check sonst
+    # ~1,5s nach jeder Fenster-Konstruktion auslösen würde.
+    win.settings.auto_update_check_enabled = False
 
-    win.settings_panel._devices = [ScannerDevice(device_id="fake0", display_name="Test-Scanner")]
+    win.settings_panel._devices = fake_devices
     win.settings_panel._device_combo.clear()
     win.settings_panel._device_combo.addItem("Test-Scanner", userData="fake0")
     win.settings_panel._device_combo.setEnabled(True)
@@ -167,3 +195,71 @@ def test_gear_icon_navigates_to_settings_page_and_back(window):
 
     window.settings_page.backRequested.emit()
     assert window._stack.currentWidget() is not window.settings_page
+
+
+def test_check_for_updates_click_shows_searching_state(window, app):
+    # check_for_update gemockt, damit der Test nicht auf einen echten Netzwerkaufruf wartet.
+    page = SettingsPage(window.settings)
+    try:
+        with patch("scanner_app.ui.settings_page.check_for_update", return_value=None):
+            assert page._check_update_button.isEnabled()
+            page._on_check_updates_clicked()
+            assert not page._check_update_button.isEnabled()
+            assert "Suche nach Updates" in page._update_status_label.text()
+
+            for thread in list(page._threads):
+                thread.wait(2000)
+            app.processEvents()
+    finally:
+        page.close()
+
+
+def test_update_checked_with_result_shows_download_button_and_emits_signal(window):
+    from scanner_app.update_checker import UpdateInfo
+
+    page = SettingsPage(window.settings)
+    page.show()
+    try:
+        info = UpdateInfo(version="9.9.9", html_url="https://example.invalid/x", notes="")
+        received = []
+        page.updateAvailable.connect(received.append)
+
+        page._on_update_checked(info)
+
+        assert page._pending_update is info
+        assert page._download_update_button.isVisible()
+        assert "9.9.9" in page._update_status_label.text()
+        assert received == [info]
+    finally:
+        page.close()
+
+
+def test_update_checked_with_no_result_hides_download_button(window):
+    page = SettingsPage(window.settings)
+    try:
+        page._download_update_button.setVisible(True)
+        page._on_update_checked(None)
+        assert not page._download_update_button.isVisible()
+        assert "aktuell" in page._update_status_label.text()
+    finally:
+        page.close()
+
+
+def test_auto_update_toggle_persists_setting(window):
+    page = SettingsPage(window.settings)
+    try:
+        page._auto_update_toggle.setChecked(False)
+        assert window.settings.auto_update_check_enabled is False
+    finally:
+        page.close()
+
+
+def test_main_window_shows_dialog_when_update_available(window):
+    from scanner_app.update_checker import UpdateInfo
+
+    info = UpdateInfo(version="9.9.9", html_url="https://example.invalid/x", notes="Testnotiz")
+    with patch("scanner_app.ui.main_window.QMessageBox") as mock_box_cls:
+        mock_box = mock_box_cls.return_value
+        mock_box.clickedButton.return_value = None
+        window._on_update_available(info)
+    mock_box.exec.assert_called_once()

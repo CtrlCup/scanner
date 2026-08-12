@@ -82,6 +82,14 @@ class AppSettings:
         self._settings.setValue("accent_color", value)
 
     @property
+    def auto_update_check_enabled(self) -> bool:
+        return self._settings.value("auto_update_check_enabled", True, type=bool)
+
+    @auto_update_check_enabled.setter
+    def auto_update_check_enabled(self, value: bool) -> None:
+        self._settings.setValue("auto_update_check_enabled", value)
+
+    @property
     def last_device_id(self) -> str | None:
         value = self._settings.value("last_device_id", "")
         return value or None

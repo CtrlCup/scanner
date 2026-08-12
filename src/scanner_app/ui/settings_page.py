@@ -26,6 +26,7 @@ from scanner_app.ocr.language_manager import (
 from scanner_app.ocr.orientation import ensure_osd_installed
 from scanner_app.ui.widgets.segmented_control import SegmentedControl
 from scanner_app.ui.widgets.toggle_switch import ToggleSwitch
+from scanner_app.update_checker import UpdateInfo, check_for_update
 
 _THEME_LABELS = {"Hell": "light", "Dunkel": "dark", "Automatisch": "system"}
 _THEME_LABELS_REVERSE = {v: k for k, v in _THEME_LABELS.items()}
@@ -51,6 +52,21 @@ class _TaskWorker(QObject):
             self.finished.emit(False)
 
 
+class _UpdateCheckWorker(QObject):
+    """check_for_update() schlägt selbst nie fehlt (gibt bei Netzwerkfehlern None zurück) —
+    dieser Worker trägt daher ein echtes Ergebnis (UpdateInfo | None), keinen bool-Erfolg.
+    """
+
+    finished = Signal(object)
+
+    def __init__(self, current_version: str) -> None:
+        super().__init__()
+        self._current_version = current_version
+
+    def run(self) -> None:
+        self.finished.emit(check_for_update(self._current_version))
+
+
 class SettingsPage(QWidget):
     """Eingebettete Einstellungen-Seite (kein separates Fenster): automatisches Drehen,
     OCR an/aus + Sprachauswahl (Chips mit Installiert-Status, On-Demand-Hintergrund-Download)
@@ -63,6 +79,7 @@ class SettingsPage(QWidget):
     accentChanged = Signal(str)
     themeChanged = Signal(str)
     ocrSettingsChanged = Signal()
+    updateAvailable = Signal(object)  # UpdateInfo, emitted wenn eine neue Version gefunden wird
 
     def __init__(self, settings: AppSettings, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -70,6 +87,7 @@ class SettingsPage(QWidget):
         self._settings = settings
         self._threads: list[QThread] = []
         self._language_chips: dict[str, QPushButton] = {}
+        self._pending_update: UpdateInfo | None = None
 
         outer_layout = QVBoxLayout(self)
         outer_layout.setContentsMargins(0, 0, 0, 0)
@@ -212,6 +230,37 @@ class SettingsPage(QWidget):
         layout.addLayout(accent_row)
 
         layout.addWidget(self._separator())
+
+        auto_update_row = QHBoxLayout()
+        auto_update_label = QLabel("Automatisch nach Updates suchen")
+        auto_update_label.setProperty("role", "sectionLabel")
+        auto_update_row.addWidget(auto_update_label)
+        auto_update_row.addStretch()
+        self._auto_update_toggle = ToggleSwitch(accent=settings.accent_color)
+        self._auto_update_toggle.setChecked(settings.auto_update_check_enabled)
+        self._auto_update_toggle.toggled.connect(self._on_auto_update_toggled)
+        auto_update_row.addWidget(self._auto_update_toggle)
+        layout.addLayout(auto_update_row)
+
+        update_row = QHBoxLayout()
+        self._update_status_label = QLabel(f"Version {__version__}")
+        self._update_status_label.setProperty("role", "hint")
+        update_row.addWidget(self._update_status_label)
+        update_row.addStretch()
+        self._check_update_button = QPushButton("Jetzt prüfen")
+        self._check_update_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._check_update_button.clicked.connect(self._on_check_updates_clicked)
+        update_row.addWidget(self._check_update_button)
+        layout.addLayout(update_row)
+
+        self._download_update_button = QPushButton("Neue Version öffnen")
+        self._download_update_button.setProperty("role", "primary")
+        self._download_update_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._download_update_button.setVisible(False)
+        self._download_update_button.clicked.connect(self._on_open_update_clicked)
+        layout.addWidget(self._download_update_button)
+
+        layout.addWidget(self._separator())
         year = datetime.now().year  # noqa: DTZ005 - bewusst lokales Jahr für die Fußzeile
         footer = QLabel(f"Mit ❤ von Alex entwickelt · v{__version__} · {year}")
         footer.setProperty("role", "hint")
@@ -307,7 +356,11 @@ class SettingsPage(QWidget):
             if thread in self._threads:
                 self._threads.remove(thread)
 
-        worker.finished.connect(_handle_finished)
+        # QueuedConnection erzwungen: eine Verbindung zu einer freien Python-Closure (statt
+        # einer QObject-gebundenen Methode) lässt Qt die Empfänger-Thread-Zugehörigkeit nicht
+        # zuverlässig erkennen und würde sonst teils direkt im Hintergrund-Thread ausgeführt —
+        # UI-Widgets dürfen aber nur im GUI-Thread angefasst werden.
+        worker.finished.connect(_handle_finished, Qt.ConnectionType.QueuedConnection)
         worker.finished.connect(thread.quit)
         self._threads.append(thread)
         thread.start()
@@ -322,3 +375,51 @@ class SettingsPage(QWidget):
     def _on_accent_selected(self, color: str) -> None:
         self._settings.accent_color = color
         self.accentChanged.emit(color)
+
+    # -- Updates ------------------------------------------------------------------------
+
+    def _on_auto_update_toggled(self, checked: bool) -> None:
+        self._settings.auto_update_check_enabled = checked
+
+    def _on_check_updates_clicked(self) -> None:
+        self.check_for_updates()
+
+    def check_for_updates(self) -> None:
+        """Öffentlich, damit z.B. MainWindow beim Start automatisch prüfen kann —
+        aktualisiert in jedem Fall das eigene Status-Label, emittiert updateAvailable
+        zusätzlich nur bei einem echten Fund.
+        """
+        self._check_update_button.setEnabled(False)
+        self._update_status_label.setText("Suche nach Updates …")
+        self._start_update_check()
+
+    def _start_update_check(self) -> None:
+        thread = QThread(self)
+        worker = _UpdateCheckWorker(__version__)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+
+        def _handle_finished(result: UpdateInfo | None) -> None:
+            self._on_update_checked(result)
+            if thread in self._threads:
+                self._threads.remove(thread)
+
+        worker.finished.connect(_handle_finished, Qt.ConnectionType.QueuedConnection)
+        worker.finished.connect(thread.quit)
+        self._threads.append(thread)
+        thread.start()
+
+    def _on_update_checked(self, info: UpdateInfo | None) -> None:
+        self._check_update_button.setEnabled(True)
+        self._pending_update = info
+        if info is None:
+            self._update_status_label.setText(f"Version {__version__} — aktuell")
+            self._download_update_button.setVisible(False)
+            return
+        self._update_status_label.setText(f"Version {__version__} — Update auf v{info.version} verfügbar")
+        self._download_update_button.setVisible(True)
+        self.updateAvailable.emit(info)
+
+    def _on_open_update_clicked(self) -> None:
+        if self._pending_update is not None:
+            QDesktopServices.openUrl(self._pending_update.html_url)
