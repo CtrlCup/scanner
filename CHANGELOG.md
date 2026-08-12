@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.7.1 (2026-08-12)
+
+### Bug Fixes
+
+- Prevent hard crash from destroying a still-running QThread
+  ([`a1d6ff8`](https://github.com/CtrlCup/scanner/commit/a1d6ff8f22dd2bff46c02aec00462063dd7b87e7))
+
+
 ## v0.7.0 (2026-08-12)
 
 ### Features
