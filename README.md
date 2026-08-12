@@ -53,7 +53,8 @@ jede Datei ist dort mit einem Label versehen, welche Plattform sie abdeckt.
 
 | Datei | Für |
 |---|---|
-| `Scanner-*-windows-x86_64.exe` | Windows 10/11 (64-bit) — portable, kein Installer nötig |
+| `Scanner-*-windows-x86_64-setup.exe` | Windows 10/11 (64-bit) — Installer (empfohlen: Startmenü-Eintrag, sauberes Deinstallieren) |
+| `Scanner-*-windows-x86_64.exe` | Windows 10/11 (64-bit) — portable, ohne Installation direkt startbar |
 | `Scanner-*-x86_64.AppImage` | Linux, universell — `chmod +x`, dann ausführen |
 | `scanner_*_amd64.deb` | Linux — Debian, Ubuntu und Derivate |
 | `scanner-*-1.x86_64.rpm` | Linux — Fedora, RHEL, openSUSE und Derivate |

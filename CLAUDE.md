@@ -120,6 +120,12 @@ an den Release-Text an. Manueller Lauf ohne Release-Upload: `gh workflow run pac
 (eine einzelne `Scanner.exe`, das ist die als `.exe` erwartete Datei), Linux als **Onedir**
 (Ordner mit `Scanner` + `_internal/`, passend für AppImage/deb/rpm/tar.gz).
 
+Windows bekommt zusätzlich einen echten Installer über `packaging/scanner.iss`
+(Inno Setup, im `windows`-Job via `choco install innosetup` + `ISCC.exe` gebaut) —
+`Scanner-X.Y.Z-windows-x86_64-setup.exe` mit Startmenü-Eintrag und sauberer
+Deinstallation über die Windows-Einstellungen. Die portable `Scanner.exe` bleibt zusätzlich
+als Download bestehen, für alle, die nichts installieren wollen.
+
 `packaging/icon.png`/`icon.ico` sind ein generischer Platzhalter (kein echtes Markenlogo) —
 bei Bedarf ersetzen.
 

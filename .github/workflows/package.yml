@@ -21,18 +21,29 @@ jobs:
           python-version: "3.11"
       - run: pip install -e ".[build]"
       - run: pyinstaller packaging/scanner.spec --distpath dist --workpath build --noconfirm
-      - name: Version ermitteln und .exe versionieren
+      - name: Version ermitteln und portable .exe versionieren
         id: version
         shell: bash
         run: |
           VERSION=$(python -c "from scanner_app import __version__; print(__version__)")
           NAME="Scanner-${VERSION}-windows-x86_64.exe"
-          mv dist/Scanner.exe "dist/$NAME"
+          cp dist/Scanner.exe "dist/$NAME"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "exe_name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "setup_name=Scanner-${VERSION}-windows-x86_64-setup.exe" >> "$GITHUB_OUTPUT"
+      - name: Inno Setup installieren
+        run: choco install innosetup --no-progress -y
+      - name: Installer bauen
+        shell: pwsh
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
+            "/DMyAppVersion=${{ steps.version.outputs.version }}" packaging\scanner.iss
       - uses: actions/upload-artifact@v4
         with:
           name: scanner-windows-exe
-          path: dist/${{ steps.version.outputs.exe_name }}
+          path: |
+            dist/${{ steps.version.outputs.exe_name }}
+            dist/installer/${{ steps.version.outputs.setup_name }}
       - name: An Release anhängen
         if: ${{ github.event.inputs.tag != '' }}
         shell: bash
@@ -40,7 +51,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload "${{ github.event.inputs.tag }}" \
-            "dist/${{ steps.version.outputs.exe_name }}#Windows 10/11 (64-bit) – portable .exe, kein Installer nötig" \
+            "dist/installer/${{ steps.version.outputs.setup_name }}#Windows 10/11 (64-bit) – Installer (empfohlen: Startmenü-Eintrag, sauberes Deinstallieren über Windows-Einstellungen)" \
+            "dist/${{ steps.version.outputs.exe_name }}#Windows 10/11 (64-bit) – portable, ohne Installation direkt startbar" \
             --clobber --repo "${{ github.repository }}"
 
   linux:
@@ -101,7 +113,8 @@ jobs:
 
           | Datei | Für |
           |---|---|
-          | `Scanner-*-windows-x86_64.exe` | Windows 10/11 (64-bit) — portable, kein Installer nötig |
+          | `Scanner-*-windows-x86_64-setup.exe` | Windows 10/11 (64-bit) — Installer (empfohlen: Startmenü-Eintrag, sauberes Deinstallieren) |
+          | `Scanner-*-windows-x86_64.exe` | Windows 10/11 (64-bit) — portable, ohne Installation direkt startbar |
           | `Scanner-*-x86_64.AppImage` | Linux, universell — `chmod +x`, dann ausführen |
           | `scanner_*_amd64.deb` | Linux — Debian, Ubuntu und Derivate |
           | `scanner-*-1.x86_64.rpm` | Linux — Fedora, RHEL, openSUSE und Derivate |
