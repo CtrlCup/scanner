@@ -5,7 +5,15 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION=$(.venv/bin/python -c "from scanner_app import __version__; print(__version__)")
+# Lokal existiert eine .venv, in CI installieren wir direkt in die System-/Runner-Umgebung.
+PYTHON=python3
+PYINSTALLER=pyinstaller
+if [ -x ".venv/bin/python" ]; then
+  PYTHON=".venv/bin/python"
+  PYINSTALLER=".venv/bin/pyinstaller"
+fi
+
+VERSION=$("$PYTHON" -c "from scanner_app import __version__; print(__version__)")
 ARCH=$(uname -m)
 DIST=dist
 PKGROOT=packaging
@@ -14,7 +22,7 @@ mkdir -p "$OUT"
 
 echo "== PyInstaller-Bundle bauen (v$VERSION) =="
 rm -rf build "$DIST/Scanner"
-QT_QPA_PLATFORM=offscreen .venv/bin/pyinstaller packaging/scanner.spec --distpath "$DIST" --workpath build --noconfirm
+QT_QPA_PLATFORM=offscreen "$PYINSTALLER" packaging/scanner.spec --distpath "$DIST" --workpath build --noconfirm
 
 echo "== .tar.gz =="
 TARDIR="$DIST/scanner-$VERSION-linux-$ARCH"
@@ -45,7 +53,7 @@ echo "  -> $OUT/Scanner-$VERSION-$ARCH.AppImage"
 
 FPM="fpm"
 if ! command -v fpm >/dev/null 2>&1; then
-  FPM="$HOME/.local/share/gem/ruby/3.3.0/bin/fpm"
+  FPM=$(find "$HOME/.local/share/gem" -maxdepth 4 -name fpm -type f 2>/dev/null | head -1)
 fi
 
 echo "== .deb =="
