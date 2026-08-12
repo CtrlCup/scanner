@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.3.2 (2026-08-12)
+
+### Bug Fixes
+
+- Attach built packages to GitHub Releases automatically
+  ([`7763271`](https://github.com/CtrlCup/scanner/commit/7763271747160bd318a6ffde0333d73e32db3d47))
+
+
 ## v0.3.1 (2026-08-12)
 
 ### Bug Fixes
