@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v0.3.0 (2026-08-12)
+
+### Features
+
+- Add packaging for .exe, .AppImage, .deb, .rpm and .tar.gz
+  ([`7b32f41`](https://github.com/CtrlCup/scanner/commit/7b32f415c36e3b2a7bd5073764465f26bcac58ec))
+
+### Testing
+
+- Skip real-tesseract orientation test when osd.traineddata is missing
+  ([`c47e920`](https://github.com/CtrlCup/scanner/commit/c47e920411e3465d0399d9e85b33034efb2cdcc8))
+
+
 ## v0.2.0 (2026-08-12)
 
 ### Continuous Integration
