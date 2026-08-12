@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.5.1 (2026-08-12)
+
+### Bug Fixes
+
+- Set app icon for taskbar/titlebar (closes #5)
+  ([`367c80d`](https://github.com/CtrlCup/scanner/commit/367c80d525737bbd4f97355ed7eb4ccb84027857))
+
+
 ## v0.5.0 (2026-08-12)
 
 ### Documentation
