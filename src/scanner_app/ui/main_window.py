@@ -10,6 +10,7 @@ from scanner_app.app_settings import AppSettings
 from scanner_app.backend import ScannerBackendError, get_backend
 from scanner_app.models.document import Document, DocumentType, generate_filename
 from scanner_app.ocr.ocr_engine import OcrError
+from scanner_app.ocr.orientation import detect_rotation
 from scanner_app.scanning_service import save_and_process
 from scanner_app.ui.preview_panel import PreviewPanel
 from scanner_app.ui.settings_dialog import SettingsDialog
@@ -79,7 +80,11 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Scan fehlgeschlagen", str(exc))
             return
 
-        self.document.add_page(target)
+        page = self.document.add_page(target)
+        if self.settings.auto_rotate_enabled:
+            rotation = detect_rotation(target)
+            if rotation:
+                self.document.rotate_page(page.id, rotation)
         self._save_and_refresh()
 
     # -- Seiten verwalten ----------------------------------------------------------
@@ -111,6 +116,7 @@ class MainWindow(QMainWindow):
                 output_path,
                 ocr_enabled=self.settings.ocr_enabled,
                 ocr_languages=self.settings.ocr_languages,
+                handwriting_enabled=self.settings.handwriting_enabled,
             )
         except OcrError as exc:
             QMessageBox.warning(self, "OCR fehlgeschlagen", str(exc))

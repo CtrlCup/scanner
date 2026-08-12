@@ -192,4 +192,22 @@ def build_stylesheet(mode: str, accent: str) -> str:
     }}
 
     QDialog {{ background-color: {palette['panel_bg']}; }}
+
+    #settingsScrollArea, #settingsScrollArea > QWidget > QWidget {{
+        background-color: {palette['panel_bg']};
+        border: none;
+    }}
+    QScrollBar:vertical {{
+        background: transparent;
+        width: 10px;
+        margin: 2px;
+    }}
+    QScrollBar::handle:vertical {{
+        background: {palette['border']};
+        border-radius: 4px;
+        min-height: 24px;
+    }}
+    QScrollBar::handle:vertical:hover {{ background: {palette['text_secondary']}; }}
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}
+    QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
     """

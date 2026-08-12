@@ -124,3 +124,16 @@ sudo apt-get install -y libsane-dev sane-utils tesseract-ocr tesseract-ocr-deu t
 - OCR wird, falls in den Einstellungen aktiviert, beim PDF-Schreiben automatisch angewendet
   (Sprachen aus den Einstellungen, Standardsprachen Deutsch+Englisch vorinstalliert, weitere
   Sprachen werden bei Auswahl im Hintergrund nachgeladen).
+- **Automatisches Drehen** (eigener Einstellungen-Toggle, unabhängig von OCR): nach jedem Scan
+  wird die Ausrichtung der Seite per Tesseract-OSD (`scanner_app/ocr/orientation.py`) erkannt
+  und die Seite automatisch in die erkannte Richtung gedreht — best effort, bei fehlender
+  Erkennung (z.B. zu wenig Text) bleibt die Seite unverändert. Benötigt `osd.traineddata`,
+  wird beim Aktivieren des Toggles bei Bedarf im Hintergrund heruntergeladen.
+- **Handschrift-Erkennung** (Toggle nur sichtbar, wenn OCR aktiviert ist): schaltet Tesseract
+  auf den reinen LSTM-Engine-Modus (`oem=1`) um. Realistische Erwartungshaltung: Tesseract ist
+  primär für Druckschrift trainiert, auch mit diesem Modus ist echte Handschrift nur begrenzt
+  zuverlässig erkennbar.
+- Der Einstellungsdialog-Inhalt liegt in einer `QScrollArea` — bei künftigen neuen Optionen
+  nicht direkt in `QVBoxLayout(self)` einhängen, sondern in das `content`-Widget der
+  Scroll-Area, sonst quetscht Qt bei zu viel Inhalt einzelne Zeilen ohne Fehlermeldung
+  unsichtbar zusammen (siehe Git-History zu `settings_dialog.py` für das konkrete Symptom).

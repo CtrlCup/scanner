@@ -13,6 +13,7 @@ def save_and_process(
     *,
     ocr_enabled: bool = False,
     ocr_languages: list[str] | None = None,
+    handwriting_enabled: bool = False,
 ) -> Path:
     """Schreibt/aktualisiert die Ausgabedatei aus dem aktuellen Dokumentzustand und wendet
     danach optional OCR an. Wird nach jedem Scan sowie nach Löschen/Neuordnen/Rotieren
@@ -23,5 +24,5 @@ def save_and_process(
     """
     path = save_document(document, output_path)
     if ocr_enabled and document.document_type is DocumentType.PDF:
-        apply_ocr(path, ocr_languages)
+        apply_ocr(path, ocr_languages, handwriting=handwriting_enabled)
     return path

@@ -10,10 +10,17 @@ class OcrError(Exception):
     """OCR konnte nicht angewendet werden (z.B. fehlende Systemabhängigkeiten)."""
 
 
-def apply_ocr(pdf_path: Path | str, languages: list[str] | None = None) -> Path:
+def apply_ocr(
+    pdf_path: Path | str, languages: list[str] | None = None, *, handwriting: bool = False
+) -> Path:
     """Fügt dem PDF unter pdf_path in-place eine durchsuchbare Textebene hinzu.
 
     languages sind UI-Anzeigenamen (z.B. "Deutsch"), nicht Tesseract-Codes.
+
+    handwriting schaltet Tesseract auf den reinen LSTM-Engine-Modus (oem=1), der auf
+    unregelmäßiger/handschriftlicher Schrift tendenziell robuster ist als der kombinierte
+    Standardmodus — Tesseract ist primär für Druckschrift trainiert, daher ist auch mit
+    handwriting=True keine verlässliche Erkennung echter Handschrift zu erwarten.
     """
     import ocrmypdf
     from ocrmypdf.exceptions import EncryptedPdfError, MissingDependencyError
@@ -33,6 +40,7 @@ def apply_ocr(pdf_path: Path | str, languages: list[str] | None = None) -> Path:
             language=codes,
             force_ocr=True,  # unsere PDFs sind frisch aus Bildern erzeugt, nie vorab-OCRt
             progress_bar=False,
+            tesseract_oem=1 if handwriting else None,
         )
     except MissingDependencyError as exc:
         raise OcrError(

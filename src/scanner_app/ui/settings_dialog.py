@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 
 from PySide6.QtCore import QObject, Qt, QThread, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
@@ -10,6 +12,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -21,31 +24,38 @@ from scanner_app.ocr.language_manager import (
     download_language,
     is_language_installed,
 )
+from scanner_app.ocr.orientation import ensure_osd_installed
 from scanner_app.ui.widgets.segmented_control import SegmentedControl
 from scanner_app.ui.widgets.toggle_switch import ToggleSwitch
 
 _THEME_LABELS = {"Hell": "light", "Dunkel": "dark", "Automatisch": "system"}
 _THEME_LABELS_REVERSE = {v: k for k, v in _THEME_LABELS.items()}
+_GITHUB_URL = "https://github.com/CtrlCup/scanner"
 
 
-class _LanguageDownloadWorker(QObject):
-    finished = Signal(str, bool)
+class _TaskWorker(QObject):
+    """Führt einen blockierenden Zero-Arg-Callable (z.B. Sprachpaket-/OSD-Download) in
+    einem Hintergrund-Thread aus und meldet Erfolg/Misserfolg zurück an den UI-Thread.
+    """
 
-    def __init__(self, display_name: str) -> None:
+    finished = Signal(bool)
+
+    def __init__(self, task: Callable[[], object]) -> None:
         super().__init__()
-        self._display_name = display_name
+        self._task = task
 
     def run(self) -> None:
         try:
-            download_language(self._display_name)
-            self.finished.emit(self._display_name, True)
-        except Exception:  # noqa: BLE001 - jeder Download-Fehler (Netzwerk, IO, ...) zählt als Fehlschlag
-            self.finished.emit(self._display_name, False)
+            self._task()
+            self.finished.emit(True)
+        except Exception:  # noqa: BLE001 - jeder Download-Fehler zählt als Fehlschlag
+            self.finished.emit(False)
 
 
 class SettingsDialog(QDialog):
-    """Gear-Icon-Dialog: OCR an/aus + Sprachauswahl (Chips mit Installiert-Status,
-    On-Demand-Hintergrund-Download), Theme, Akzentfarbe, Footer.
+    """Gear-Icon-Dialog: automatisches Drehen, OCR an/aus + Sprachauswahl (Chips mit
+    Installiert-Status, On-Demand-Hintergrund-Download) + optionale Handschrift-Erkennung
+    (nur bei aktiviertem OCR), Theme, Akzentfarbe, Footer mit GitHub-Link.
     """
 
     accentChanged = Signal(str)
@@ -55,13 +65,47 @@ class SettingsDialog(QDialog):
     def __init__(self, settings: AppSettings, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Einstellungen")
-        self.setMinimumWidth(420)
+        self.setMinimumWidth(440)
+        self.resize(440, 620)
         self._settings = settings
         self._threads: list[QThread] = []
         self._language_chips: dict[str, QPushButton] = {}
 
-        layout = QVBoxLayout(self)
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+
+        scroll_area = QScrollArea()
+        scroll_area.setObjectName("settingsScrollArea")
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        outer_layout.addWidget(scroll_area)
+
+        content = QWidget()
+        scroll_area.setWidget(content)
+
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(16)
+
+        auto_rotate_row = QHBoxLayout()
+        auto_rotate_label = QLabel("Dokument automatisch drehen")
+        auto_rotate_label.setProperty("role", "sectionLabel")
+        auto_rotate_row.addWidget(auto_rotate_label)
+        auto_rotate_row.addStretch()
+        self._auto_rotate_toggle = ToggleSwitch(accent=settings.accent_color)
+        self._auto_rotate_toggle.setChecked(settings.auto_rotate_enabled)
+        self._auto_rotate_toggle.toggled.connect(self._on_auto_rotate_toggled)
+        auto_rotate_row.addWidget(self._auto_rotate_toggle)
+        layout.addLayout(auto_rotate_row)
+        auto_rotate_hint = QLabel(
+            "Erkennt die Ausrichtung jeder gescannten Seite automatisch und dreht sie "
+            "in die richtige Richtung."
+        )
+        auto_rotate_hint.setProperty("role", "hint")
+        auto_rotate_hint.setWordWrap(True)
+        layout.addWidget(auto_rotate_hint)
+
+        layout.addWidget(self._separator())
 
         ocr_row = QHBoxLayout()
         ocr_label = QLabel("OCR-Texterkennung")
@@ -97,6 +141,24 @@ class SettingsDialog(QDialog):
             self._refresh_chip_label(name)
             chip_grid.addWidget(chip, index // columns, index % columns)
         language_layout.addLayout(chip_grid)
+
+        handwriting_row = QHBoxLayout()
+        handwriting_label = QLabel("Handschrift-Erkennung")
+        handwriting_row.addWidget(handwriting_label)
+        handwriting_row.addStretch()
+        self._handwriting_toggle = ToggleSwitch(accent=settings.accent_color)
+        self._handwriting_toggle.setChecked(settings.handwriting_enabled)
+        self._handwriting_toggle.toggled.connect(self._on_handwriting_toggled)
+        handwriting_row.addWidget(self._handwriting_toggle)
+        language_layout.addLayout(handwriting_row)
+        handwriting_hint = QLabel(
+            "Optimiert die Texterkennung für handschriftliche Notizen. Ergebnisse sind bei "
+            "Handschrift grundsätzlich weniger zuverlässig als bei Druckschrift."
+        )
+        handwriting_hint.setProperty("role", "hint")
+        handwriting_hint.setWordWrap(True)
+        language_layout.addWidget(handwriting_hint)
+
         layout.addWidget(self._language_section)
         self._language_section.setVisible(settings.ocr_enabled)
 
@@ -134,11 +196,34 @@ class SettingsDialog(QDialog):
         footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(footer)
 
+        github_link = QLabel(f'<a href="{_GITHUB_URL}">GitHub-Projekt ansehen</a>')
+        github_link.setProperty("role", "hint")
+        github_link.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        github_link.setOpenExternalLinks(False)
+        github_link.linkActivated.connect(lambda url: QDesktopServices.openUrl(url))
+        layout.addWidget(github_link)
+
     @staticmethod
     def _separator() -> QFrame:
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
         return line
+
+    # -- Automatisches Drehen -------------------------------------------------------
+
+    def _on_auto_rotate_toggled(self, checked: bool) -> None:
+        self._settings.auto_rotate_enabled = checked
+        if checked:
+            self._auto_rotate_toggle.setEnabled(False)
+            self._run_in_background(ensure_osd_installed, self._on_osd_ready)
+
+    def _on_osd_ready(self, success: bool) -> None:
+        self._auto_rotate_toggle.setEnabled(True)
+        if not success:
+            self._auto_rotate_toggle.setChecked(False)
+            self._settings.auto_rotate_enabled = False
+
+    # -- OCR / Sprachen / Handschrift ------------------------------------------------
 
     def _refresh_chip_label(self, name: str) -> None:
         chip = self._language_chips[name]
@@ -150,6 +235,10 @@ class SettingsDialog(QDialog):
         self._language_section.setVisible(checked)
         self.ocrSettingsChanged.emit()
 
+    def _on_handwriting_toggled(self, checked: bool) -> None:
+        self._settings.handwriting_enabled = checked
+        self.ocrSettingsChanged.emit()
+
     def _on_language_toggled(self, name: str) -> None:
         chip = self._language_chips[name]
         selected = chip.isChecked()
@@ -157,22 +246,14 @@ class SettingsDialog(QDialog):
         if selected and not is_language_installed(name):
             chip.setEnabled(False)
             chip.setText(f"{name}  …")
-            self._start_download(name)
+            self._run_in_background(
+                lambda: download_language(name), lambda ok: self._on_language_ready(name, ok)
+            )
         else:
             self._save_selected_languages()
             self.ocrSettingsChanged.emit()
 
-    def _start_download(self, name: str) -> None:
-        thread = QThread(self)
-        worker = _LanguageDownloadWorker(name)
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-        worker.finished.connect(lambda n, ok: self._on_download_finished(n, ok, thread))
-        worker.finished.connect(thread.quit)
-        self._threads.append(thread)
-        thread.start()
-
-    def _on_download_finished(self, name: str, success: bool, thread: QThread) -> None:
+    def _on_language_ready(self, name: str, success: bool) -> None:
         chip = self._language_chips[name]
         chip.setEnabled(True)
         if not success:
@@ -180,12 +261,30 @@ class SettingsDialog(QDialog):
         self._refresh_chip_label(name)
         self._save_selected_languages()
         self.ocrSettingsChanged.emit()
-        if thread in self._threads:
-            self._threads.remove(thread)
 
     def _save_selected_languages(self) -> None:
         selected = [name for name, chip in self._language_chips.items() if chip.isChecked()]
         self._settings.ocr_languages = selected or list(self._language_chips.keys())[:1]
+
+    # -- Hintergrund-Downloads --------------------------------------------------------
+
+    def _run_in_background(self, task: Callable[[], object], on_done: Callable[[bool], None]) -> None:
+        thread = QThread(self)
+        worker = _TaskWorker(task)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+
+        def _handle_finished(success: bool) -> None:
+            on_done(success)
+            if thread in self._threads:
+                self._threads.remove(thread)
+
+        worker.finished.connect(_handle_finished)
+        worker.finished.connect(thread.quit)
+        self._threads.append(thread)
+        thread.start()
+
+    # -- Darstellung ------------------------------------------------------------------
 
     def _on_theme_changed(self, label: str) -> None:
         theme = _THEME_LABELS[label]

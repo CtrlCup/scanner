@@ -4,6 +4,7 @@ löschen -> Dateityp-Wechsel) gegen ein Fake-Scanner-Backend, ohne echte Hardwar
 
 import os
 from pathlib import Path
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -14,6 +15,7 @@ from PySide6.QtWidgets import QApplication
 
 from scanner_app.backend.base import ScannerDevice
 from scanner_app.ui.main_window import MainWindow
+from scanner_app.ui.settings_dialog import SettingsDialog
 
 
 @pytest.fixture
@@ -110,3 +112,48 @@ def test_new_scan_always_starts_fresh_document(window):
     assert len(window.document.pages) == 1
     assert window.document.output_path != first_output
     assert first_output.exists()  # vorheriges Dokument bleibt unangetastet auf der Platte
+
+
+def test_auto_rotate_disabled_by_default_leaves_page_unrotated(window):
+    with patch("scanner_app.ui.main_window.detect_rotation", return_value=180) as mock_detect:
+        window._on_scan_requested()
+    mock_detect.assert_not_called()
+    assert window.document.pages[0].rotation == 0
+
+
+def test_auto_rotate_enabled_applies_detected_rotation(window):
+    window.settings.auto_rotate_enabled = True
+    with patch("scanner_app.ui.main_window.detect_rotation", return_value=180):
+        window._on_scan_requested()
+    assert window.document.pages[0].rotation == 180
+
+
+def test_auto_rotate_skips_page_rotation_when_no_rotation_detected(window):
+    window.settings.auto_rotate_enabled = True
+    with patch("scanner_app.ui.main_window.detect_rotation", return_value=0):
+        window._on_scan_requested()
+    assert window.document.pages[0].rotation == 0
+
+
+def test_handwriting_toggle_only_visible_when_ocr_enabled(window):
+    dialog = SettingsDialog(window.settings, window)
+    dialog.show()
+    try:
+        assert dialog._ocr_toggle.isChecked() is False
+        assert not dialog._language_section.isVisible()
+
+        dialog._ocr_toggle.setChecked(True)
+        assert dialog._language_section.isVisible()
+        assert dialog._handwriting_toggle.isVisible()
+
+        dialog._ocr_toggle.setChecked(False)
+        assert not dialog._language_section.isVisible()
+    finally:
+        dialog.close()
+
+
+def test_handwriting_setting_persisted_from_dialog(window):
+    dialog = SettingsDialog(window.settings, window)
+    dialog._handwriting_toggle.setChecked(True)
+    assert window.settings.handwriting_enabled is True
+    dialog.close()

@@ -50,6 +50,22 @@ class AppSettings:
         self._settings.setValue("ocr_languages", value)
 
     @property
+    def handwriting_enabled(self) -> bool:
+        return self._settings.value("handwriting_enabled", False, type=bool)
+
+    @handwriting_enabled.setter
+    def handwriting_enabled(self, value: bool) -> None:
+        self._settings.setValue("handwriting_enabled", value)
+
+    @property
+    def auto_rotate_enabled(self) -> bool:
+        return self._settings.value("auto_rotate_enabled", False, type=bool)
+
+    @auto_rotate_enabled.setter
+    def auto_rotate_enabled(self, value: bool) -> None:
+        self._settings.setValue("auto_rotate_enabled", value)
+
+    @property
     def theme(self) -> str:
         return self._settings.value("theme", DEFAULT_THEME, type=str)
 
