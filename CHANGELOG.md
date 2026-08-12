@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.4.0 (2026-08-12)
+
+### Features
+
+- Ship Windows build as a real single .exe, label release assets
+  ([`d221369`](https://github.com/CtrlCup/scanner/commit/d2213697f5f6126cca7d612659a9ab80c53ebbce))
+
+
 ## v0.3.2 (2026-08-12)
 
 ### Bug Fixes
