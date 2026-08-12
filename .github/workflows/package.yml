@@ -40,7 +40,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload "${{ github.event.inputs.tag }}" \
-            "dist/${{ steps.version.outputs.exe_name }}#🪟 Windows 10/11 (64-bit) – portable .exe, kein Installer nötig" \
+            "dist/${{ steps.version.outputs.exe_name }}#Windows 10/11 (64-bit) – portable .exe, kein Installer nötig" \
             --clobber --repo "${{ github.repository }}"
 
   linux:
@@ -78,10 +78,10 @@ jobs:
           V: ${{ steps.version.outputs.version }}
         run: |
           gh release upload "${{ github.event.inputs.tag }}" \
-            "dist/packages/scanner_${V}_amd64.deb#🐧 Linux – Debian/Ubuntu (.deb)" \
-            "dist/packages/scanner-${V}-1.x86_64.rpm#🐧 Linux – Fedora/RHEL/openSUSE (.rpm)" \
-            "dist/packages/Scanner-${V}-x86_64.AppImage#🐧 Linux – universell, portabel (AppImage: chmod +x, dann ausführen)" \
-            "dist/packages/scanner-${V}-linux-x86_64.tar.gz#🐧 Linux – portables Archiv zum manuellen Entpacken (.tar.gz)" \
+            "dist/packages/scanner_${V}_amd64.deb#Linux – Debian/Ubuntu (.deb)" \
+            "dist/packages/scanner-${V}-1.x86_64.rpm#Linux – Fedora/RHEL/openSUSE (.rpm)" \
+            "dist/packages/Scanner-${V}-x86_64.AppImage#Linux – universell, portabel (AppImage: chmod +x, dann ausführen)" \
+            "dist/packages/scanner-${V}-linux-x86_64.tar.gz#Linux – portables Archiv zum manuellen Entpacken (.tar.gz)" \
             --clobber --repo "${{ github.repository }}"
 
   annotate-release:
