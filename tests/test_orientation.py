@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from scanner_app.ocr.orientation import detect_rotation
+from scanner_app.ocr.orientation import detect_rotation, is_osd_installed
 
 
 def _fake_run(stdout: str):
@@ -38,7 +38,10 @@ def test_detect_rotation_returns_zero_on_failure(tmp_path):
         assert detect_rotation(tmp_path / "a.png") == 0
 
 
-@pytest.mark.skipif(shutil.which("tesseract") is None, reason="tesseract nicht installiert")
+@pytest.mark.skipif(
+    shutil.which("tesseract") is None or not is_osd_installed(),
+    reason="tesseract oder osd.traineddata nicht installiert",
+)
 def test_detect_rotation_against_real_tesseract_returns_int(tmp_path):
     from PIL import Image
 
