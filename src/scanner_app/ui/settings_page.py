@@ -420,6 +420,18 @@ class SettingsPage(QWidget):
         self._download_update_button.setVisible(True)
         self.updateAvailable.emit(info)
 
+    # -- Aufräumen ------------------------------------------------------------------------
+
+    def shutdown(self) -> None:
+        """Wartet auf alle noch laufenden Hintergrund-Threads (Sprachpaket-/OSD-Download,
+        Update-Check). Vor dem Schließen der Seite/App aufrufen — Qt darf einen QThread nie
+        zerstören, während sein Worker noch läuft (führt zu einem harten Absturz, nicht nur
+        zu einer Warnung, siehe Testsuite-Vorfall in der Git-History dieser Datei).
+        """
+        for thread in list(self._threads):
+            thread.quit()
+            thread.wait(3000)
+
     def _on_open_update_clicked(self) -> None:
         if self._pending_update is not None:
             QDesktopServices.openUrl(self._pending_update.html_url)

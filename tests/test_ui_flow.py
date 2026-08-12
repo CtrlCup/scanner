@@ -197,7 +197,7 @@ def test_gear_icon_navigates_to_settings_page_and_back(window):
     assert window._stack.currentWidget() is not window.settings_page
 
 
-def test_check_for_updates_click_shows_searching_state(window, app):
+def test_check_for_updates_click_shows_searching_state(window):
     # check_for_update gemockt, damit der Test nicht auf einen echten Netzwerkaufruf wartet.
     page = SettingsPage(window.settings)
     try:
@@ -206,11 +206,11 @@ def test_check_for_updates_click_shows_searching_state(window, app):
             page._on_check_updates_clicked()
             assert not page._check_update_button.isEnabled()
             assert "Suche nach Updates" in page._update_status_label.text()
-
-            for thread in list(page._threads):
-                thread.wait(2000)
-            app.processEvents()
     finally:
+        # Wartet aktiv auf den Hintergrund-Thread, bevor die Seite zerstört wird — Qt darf
+        # nie einen QThread zerstören, während sein Worker noch läuft (harter Absturz statt
+        # nur einer Warnung, siehe CLAUDE.md).
+        page.shutdown()
         page.close()
 
 

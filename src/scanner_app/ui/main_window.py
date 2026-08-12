@@ -225,5 +225,6 @@ class MainWindow(QMainWindow):
             self.setStyleSheet(stylesheet)
 
     def closeEvent(self, event) -> None:
+        self.settings_page.shutdown()
         self.backend.close()
         super().closeEvent(event)
