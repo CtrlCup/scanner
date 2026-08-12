@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.4.2 (2026-08-12)
+
+### Bug Fixes
+
+- Remove emoji from release asset labels (GitHub rejects 4-byte UTF-8)
+  ([`8eafc8e`](https://github.com/CtrlCup/scanner/commit/8eafc8ee8acbd5fe8298e3c789d7edc8288d7a23))
+
+
 ## v0.4.1 (2026-08-12)
 
 ### Bug Fixes
