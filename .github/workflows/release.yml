@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   release:
@@ -28,3 +29,15 @@ jobs:
       - run: semantic-release publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Package-Workflow für neue Version anstoßen
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Ein von GITHUB_TOKEN gepushter Tag löst laut GitHub selbst keine weiteren
+          # Workflow-Runs aus (Rekursionsschutz) — daher hier explizit dispatchen.
+          if TAG=$(git describe --tags --exact-match HEAD 2>/dev/null); then
+            echo "Neuer Tag: $TAG — löse Package-Workflow aus"
+            gh workflow run package.yml --ref main -f tag="$TAG"
+          else
+            echo "Kein neuer Tag auf HEAD — kein Release, Package-Workflow wird nicht ausgelöst"
+          fi

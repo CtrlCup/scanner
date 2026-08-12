@@ -2,9 +2,14 @@ name: Package
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - "v*"
+    inputs:
+      tag:
+        description: "Release-Tag, an das die Pakete angehängt werden (leer = nur Artefakte, kein Release-Upload)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
 
 jobs:
   windows:
@@ -23,6 +28,11 @@ jobs:
         with:
           name: scanner-windows-exe
           path: dist/Scanner-windows-x86_64.zip
+      - name: An Release anhängen
+        if: ${{ github.event.inputs.tag != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.inputs.tag }}" dist/Scanner-windows-x86_64.zip --clobber --repo ${{ github.repository }}
 
   linux:
     runs-on: ubuntu-latest
@@ -49,3 +59,8 @@ jobs:
         with:
           name: scanner-linux-packages
           path: dist/packages/*
+      - name: An Release anhängen
+        if: ${{ github.event.inputs.tag != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.inputs.tag }}" dist/packages/* --clobber --repo ${{ github.repository }}

@@ -104,9 +104,16 @@ und `.rpm` (Ausgabe in `dist/packages/`). Benötigt zusätzlich `appimagetool` u
 
 Der Windows-`.exe`-Build läuft ausschließlich über den GitHub-Actions-Workflow
 `.github/workflows/package.yml` (Job `windows`, `windows-latest`-Runner) — hier gibt es keine
-Windows-Umgebung zum lokalen Bauen/Testen. Manuell auslösbar über `gh workflow run package.yml`
-oder automatisch bei jedem `v*`-Tag; Artefakte (`scanner-windows-exe`,
-`scanner-linux-packages`) über `gh run download` abrufbar.
+Windows-Umgebung zum lokalen Bauen/Testen.
+
+`package.yml` wird nach jedem erfolgreichen Release automatisch von `release.yml` per
+`gh workflow run package.yml -f tag=vX.Y.Z` angestoßen (**nicht** über den `v*`-Tag-Push
+selbst — ein von `GITHUB_TOKEN` gepushter Tag löst laut GitHub-Rekursionsschutz keine
+weiteren Workflow-Runs aus, daher der explizite Dispatch mit `tag`-Input). Mit gesetztem
+`tag`-Input werden die gebauten Dateien zusätzlich per `gh release upload` an das
+entsprechende GitHub-Release angehängt. Manueller Lauf ohne Release-Upload:
+`gh workflow run package.yml` (Artefakte dann nur über `gh run download` abrufbar, laufen
+nach ~90 Tagen ab).
 
 `packaging/icon.png`/`icon.ico` sind ein generischer Platzhalter (kein echtes Markenlogo) —
 bei Bedarf ersetzen.
