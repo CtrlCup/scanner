@@ -43,8 +43,13 @@ class ToggleSwitch(QAbstractButton):
         self.update()
 
     def setChecked(self, checked: bool) -> None:
-        super().setChecked(checked)
+        # _handle_pos MUSS vor super().setChecked() gesetzt werden: das löst synchron das
+        # toggled-Signal aus, das _animate_to_state per aktuellem _handle_pos als Startwert
+        # anstößt. Falsche Reihenfolge lässt die Animation kurz zur alten Position zurück-
+        # springen, bevor sie zur neuen zurückanimiert — sichtbar als falsch positionierter
+        # Handle direkt nach dem (nicht-interaktiven) Setzen des Anfangszustands.
         self._handle_pos = 21.0 if checked else 3.0
+        super().setChecked(checked)
 
     def paintEvent(self, event) -> None:
         del event

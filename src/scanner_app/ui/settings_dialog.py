@@ -228,7 +228,7 @@ class SettingsDialog(QDialog):
     def _refresh_chip_label(self, name: str) -> None:
         chip = self._language_chips[name]
         installed = is_language_installed(name)
-        chip.setText(name if installed else f"{name}  ⭳")
+        chip.setText(name if installed else f"{name}  ↓")
 
     def _on_ocr_toggled(self, checked: bool) -> None:
         self._settings.ocr_enabled = checked
