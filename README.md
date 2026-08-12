@@ -63,6 +63,14 @@ jede Datei ist dort mit einem Label versehen, welche Plattform sie abdeckt.
 Für OCR und automatisches Drehen wird zur Laufzeit `tesseract` benötigt, für den Scanner-Zugriff
 unter Linux `sane`-Backends für das jeweilige Gerät (unter Windows läuft WIA bereits im System).
 
+### Windows-SmartScreen-Warnung
+
+Beim ersten Start meldet Windows Defender SmartScreen möglicherweise „Der Computer wurde durch
+Windows geschützt" — das ist normal für neue, unsignierte Anwendungen ohne etablierte Reputation
+bei Microsoft und **keine Fehlfunktion**. Auf „Weitere Informationen" und anschließend „Trotzdem
+ausführen" klicken, um die App zu starten. Eine dauerhafte Lösung wäre ein kostenpflichtiges
+Code-Signing-Zertifikat (z.B. von Sectigo oder DigiCert) — das ist bislang nicht eingerichtet.
+
 ## Entwicklung
 
 ```bash

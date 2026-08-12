@@ -46,6 +46,11 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 
+# UPX-Kompression bewusst deaktiviert: gepackte Executables lösen bei vielen Windows-
+# Defender/SmartScreen-Heuristiken häufiger Fehlalarme aus, da UPX auch von echter Malware
+# zur Verschleierung genutzt wird (siehe Issue #1). Ohne echtes Code-Signing-Zertifikat bleibt
+# die SmartScreen-Warnung bei einer neuen, unbekannten .exe zwar trotzdem bestehen — UPX zu
+# vermeiden reduziert aber das Risiko zusätzlicher AV-Fehlalarme.
 if ONEFILE:
     exe = EXE(
         pyz,
@@ -56,6 +61,7 @@ if ONEFILE:
         name="Scanner",
         console=False,
         icon=ICON_ICO,
+        upx=False,
     )
 else:
     exe = EXE(
@@ -66,10 +72,12 @@ else:
         name="Scanner",
         console=False,
         icon=ICON_ICO,
+        upx=False,
     )
     coll = COLLECT(
         exe,
         a.binaries,
         a.datas,
         name="Scanner",
+        upx=False,
     )
