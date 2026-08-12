@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Scanner
+Comment=Dokumentenscanner mit OCR
+Exec=Scanner
+Icon=scanner
+Categories=Graphics;Scanning;Office;
+Terminal=false

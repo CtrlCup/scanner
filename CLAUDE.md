@@ -89,7 +89,27 @@ sudo apt-get install -y libsane-dev sane-utils tesseract-ocr tesseract-ocr-deu t
 
 # Version/Release lokal simulieren (ohne zu veröffentlichen)
 .venv/bin/semantic-release version --print
+
+# Distributionspakete bauen (Linux: tar.gz, AppImage, deb, rpm — siehe unten)
+pip install -e ".[build]"
+bash packaging/build_linux.sh
 ```
+
+## Distributionspakete
+
+`packaging/scanner.spec` ist die PyInstaller-Spec (onedir-Bundle, gemeinsam für Linux und
+Windows genutzt). `packaging/build_linux.sh` baut daraus lokal `.tar.gz`, `.AppImage`, `.deb`
+und `.rpm` (Ausgabe in `dist/packages/`). Benötigt zusätzlich `appimagetool` und `fpm`
+(`gem install fpm`) im PATH — beide sind nicht Teil des Python-Envs.
+
+Der Windows-`.exe`-Build läuft ausschließlich über den GitHub-Actions-Workflow
+`.github/workflows/package.yml` (Job `windows`, `windows-latest`-Runner) — hier gibt es keine
+Windows-Umgebung zum lokalen Bauen/Testen. Manuell auslösbar über `gh workflow run package.yml`
+oder automatisch bei jedem `v*`-Tag; Artefakte (`scanner-windows-exe`,
+`scanner-linux-packages`) über `gh run download` abrufbar.
+
+`packaging/icon.png`/`icon.ico` sind ein generischer Platzhalter (kein echtes Markenlogo) —
+bei Bedarf ersetzen.
 
 ## Architektur
 

@@ -20,6 +20,9 @@ dev = [
     "ruff>=0.6",
     "python-semantic-release>=10.0",
 ]
+build = [
+    "pyinstaller>=6.10",
+]
 
 [project.scripts]
 scanner = "scanner_app.main:main"
