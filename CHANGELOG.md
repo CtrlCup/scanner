@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.6.0 (2026-08-12)
+
+### Features
+
+- Move settings into an embedded page instead of a separate window (closes #4)
+  ([`b77eb40`](https://github.com/CtrlCup/scanner/commit/b77eb4084067c68fba7bfa3f651fa216944c5c03))
+
+
 ## v0.5.1 (2026-08-12)
 
 ### Bug Fixes
