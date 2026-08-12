@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.6.1 (2026-08-12)
+
+### Bug Fixes
+
+- Mitigate Windows SmartScreen false-positive risk, document workaround
+  ([`4fba800`](https://github.com/CtrlCup/scanner/commit/4fba8001a43e09468ccd3ca8f84881e79a9bee55))
+
+
 ## v0.6.0 (2026-08-12)
 
 ### Features
