@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.7.0 (2026-08-12)
+
+### Features
+
+- Add update check against GitHub Releases (MVP, closes #2)
+  ([`db9f6ec`](https://github.com/CtrlCup/scanner/commit/db9f6ec018e95c25468e8139ae797e25ef59ff6e))
+
+
 ## v0.6.1 (2026-08-12)
 
 ### Bug Fixes
