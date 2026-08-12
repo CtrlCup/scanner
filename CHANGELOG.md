@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.3.1 (2026-08-12)
+
+### Bug Fixes
+
+- Make build_linux.sh work without a local .venv (CI runners)
+  ([`ee34b0a`](https://github.com/CtrlCup/scanner/commit/ee34b0a497793e9779315f7f169ee7030cd955b7))
+
+
 ## v0.3.0 (2026-08-12)
 
 ### Features
