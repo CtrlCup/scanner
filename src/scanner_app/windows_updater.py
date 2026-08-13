@@ -70,11 +70,17 @@ def download_installer(
     dest = Path(tmp_name)
     digest = hashlib.sha256()
     try:
-        request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
-        with urllib.request.urlopen(request, timeout=_TIMEOUT_SECONDS) as response:
-            total = int(response.headers.get("Content-Length") or 0)
-            written = 0
-            with os.fdopen(fd, "wb") as f:
+        # os.fdopen(fd, ...) MUSS das äußerste with sein, nicht innerhalb von urlopen()
+        # verschachtelt: sein __exit__ (schließt den Datei-Handle) muss auf JEDEM Fehlerpfad
+        # laufen, BEVOR die except-Blöcke unten dest.unlink() aufrufen — unter Windows lässt
+        # sich eine Datei mit noch offenem Handle nicht löschen (PermissionError), anders als
+        # unter Linux/POSIX, wo das stillschweigend funktioniert. War ein reproduzierbarer,
+        # von der Windows-CI aufgedeckter Bug, nicht nur eine theoretische Möglichkeit.
+        with os.fdopen(fd, "wb") as f:
+            request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
+            with urllib.request.urlopen(request, timeout=_TIMEOUT_SECONDS) as response:
+                total = int(response.headers.get("Content-Length") or 0)
+                written = 0
                 while True:
                     if cancel_check is not None and cancel_check():
                         raise UpdateInstallError("Download abgebrochen.")
