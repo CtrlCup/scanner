@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.9.1 (2026-08-13)
+
+### Bug Fixes
+
+- Hanging background workers, native-style rendering, and layout glitches
+  ([`b6f2b80`](https://github.com/CtrlCup/scanner/commit/b6f2b80657832f59f96be2e98d4ea06acb2f0d83))
+
+
 ## v0.9.0 (2026-08-13)
 
 ### Features
