@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.8.0 (2026-08-13)
+
+### Features
+
+- Rebuild UI to match provided design mockup pixel-for-pixel
+  ([`d72435a`](https://github.com/CtrlCup/scanner/commit/d72435ab31e0ce640380ad2acf75780687ede000))
+
+
 ## v0.7.1 (2026-08-12)
 
 ### Bug Fixes
