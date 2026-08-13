@@ -26,6 +26,17 @@ datas = [(os.path.join(SRC, "scanner_app", "resources"), "scanner_app/resources"
 binaries = []
 hiddenimports = []
 
+# Optional mitgelieferte OCR-Programme (tesseract/qpdf/ghostscript) — packaging/build_linux.sh
+# bzw. der windows-Job in package.yml befüllen dieses Verzeichnis VOR dem PyInstaller-Lauf.
+# Im normalen Dev-Betrieb existiert es nicht; dann bleibt die App auf das System-PATH
+# angewiesen (siehe ocr_engine.py::missing_dependencies()). Über `datas` statt `binaries`
+# eingebunden, da PyInstaller `binaries`-Einträge für Python-Erweiterungsmodule analysiert/
+# relinkt — die hier enthaltenen, voneinander unabhängigen nativen Programme sollen dagegen
+# unverändert 1:1 mitkopiert werden.
+OCR_TOOLS_DIR = os.path.join(ROOT, "build", "ocr-tools")
+if os.path.isdir(OCR_TOOLS_DIR):
+    datas += [(OCR_TOOLS_DIR, "ocr-tools")]
+
 # ocrmypdf/pikepdf laden Teile ihrer Funktionalität über pluggy-Hooks/Dateidaten, die
 # PyInstallers statische Bytecode-Analyse nicht zuverlässig erkennt.
 for _pkg in ("ocrmypdf", "pikepdf"):

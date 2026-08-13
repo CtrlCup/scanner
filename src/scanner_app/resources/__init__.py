@@ -14,3 +14,13 @@ def resource_path(*parts: str) -> Path:
     if base is not None:
         return Path(base) / "scanner_app" / "resources" / Path(*parts)
     return Path(__file__).parent / Path(*parts)
+
+
+def frozen_bundle_dir() -> Path | None:
+    """Root-Verzeichnis des PyInstaller-Bundles (onefile: _MEIPASS-Extraktionsordner, onedir:
+    der `_internal`-Ordner) — None bei einem Start aus dem Quellcode. Für mitgelieferte
+    Ressourcen außerhalb des scanner_app-Pakets, z.B. die optional gebündelten OCR-Programme
+    tesseract/qpdf/ghostscript (siehe ocr_engine.py und packaging/).
+    """
+    base = getattr(sys, "_MEIPASS", None)
+    return Path(base) if base is not None else None

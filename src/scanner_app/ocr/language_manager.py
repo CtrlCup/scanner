@@ -6,7 +6,16 @@ from pathlib import Path
 
 from platformdirs import user_data_dir
 
+from scanner_app.resources import resource_path
+
 _TESSDATA_BASE_URL = "https://github.com/tesseract-ocr/tessdata_fast/raw/main"
+# Tesseract erwartet unter TESSDATA_PREFIX/configs/ neben den Sprachdaten auch kleine
+# Ausgabeformat-Konfigurationsdateien (hocr/pdf/txt) — ein eigener, isolierter TESSDATA_PREFIX
+# (siehe tessdata_dir()) hat diese sonst nicht, tesseract bricht dann mit
+# "Can't open hocr"/TesseractConfigError ab. Diese Dateien sind winzige, stabile
+# Standard-Parameterdateien aus der Tesseract-Distribution (Apache-2.0), keine Sprachdaten —
+# werden daher als App-Ressource mitgeliefert statt bei Bedarf heruntergeladen.
+_BUNDLED_TESSERACT_CONFIGS = ("hocr", "pdf", "txt")
 
 # UI-Anzeigename -> Tesseract-Sprachcode (ISO 639-2/T)
 AVAILABLE_LANGUAGES: dict[str, str] = {
@@ -31,7 +40,18 @@ def tessdata_dir() -> Path:
     """
     path = Path(user_data_dir("scanner-app", "scanner-app")) / "tessdata"
     path.mkdir(parents=True, exist_ok=True)
+    _ensure_bundled_configs(path)
     return path
+
+
+def _ensure_bundled_configs(tessdata_path: Path) -> None:
+    configs_dir = tessdata_path / "configs"
+    configs_dir.mkdir(exist_ok=True)
+    src_dir = resource_path("tesseract-configs")
+    for name in _BUNDLED_TESSERACT_CONFIGS:
+        dest = configs_dir / name
+        if not dest.exists():
+            shutil.copyfile(src_dir / name, dest)
 
 
 def is_language_installed(display_name: str) -> bool:

@@ -22,6 +22,7 @@ from scanner_app.app_settings import ACCENT_SWATCHES, AppSettings
 from scanner_app.ocr.language_manager import (
     AVAILABLE_LANGUAGES,
     download_language,
+    ensure_default_languages_installed,
     is_language_installed,
 )
 from scanner_app.ocr.ocr_engine import dependency_hint, missing_dependencies
@@ -411,6 +412,18 @@ class SettingsPage(QWidget):
         chip = self._language_chips[name]
         installed = is_language_installed(name)
         chip.setText(name if installed else f"{name}  ↓")
+
+    def ensure_default_ocr_languages(self) -> None:
+        """Lädt die Standardsprachen (Deutsch+Englisch) im Hintergrund herunter, falls noch
+        nicht vorhanden — von `MainWindow` einmalig beim Start aufgerufen, damit OCR sofort
+        nutzbar ist, ohne dass der Nutzer die Sprachen erst manuell in den Einstellungen
+        anstoßen muss.
+        """
+        self._run_in_background(ensure_default_languages_installed, self._on_default_languages_ready)
+
+    def _on_default_languages_ready(self, _success: bool) -> None:
+        for name in self._language_chips:
+            self._refresh_chip_label(name)
 
     def _refresh_ocr_dependency_state(self) -> None:
         """Sperrt den OCR-Toggle, wenn tesseract/qpdf/ghostscript nicht im PATH gefunden

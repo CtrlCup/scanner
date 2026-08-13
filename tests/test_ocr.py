@@ -1,3 +1,4 @@
+import os
 import shutil
 from unittest.mock import patch
 
@@ -5,6 +6,7 @@ import pytest
 from PIL import Image, ImageDraw
 
 from scanner_app.models.document import Document, DocumentType
+from scanner_app.ocr import ocr_engine
 from scanner_app.ocr.language_manager import is_language_installed
 from scanner_app.ocr.ocr_engine import OcrError, apply_ocr, dependency_hint, missing_dependencies
 from scanner_app.pdf.pdf_writer import save_document
@@ -74,3 +76,50 @@ def test_apply_ocr_raises_specific_error_when_dependency_missing(tmp_path):
         pytest.raises(OcrError, match="tesseract"),
     ):
         apply_ocr(out_path)
+
+
+@pytest.fixture
+def restore_path():
+    original = os.environ.get("PATH", "")
+    yield
+    os.environ["PATH"] = original
+
+
+def test_ensure_bundled_tools_adds_flat_linux_layout_to_path(tmp_path, restore_path):
+    # Linux (build_linux.sh): alle Programme+Shared-Libs liegen flach in einem Ordner.
+    bundle_root = tmp_path / "bundle"
+    ocr_tools = bundle_root / "ocr-tools"
+    ocr_tools.mkdir(parents=True)
+    (ocr_tools / "tesseract").touch()
+
+    with patch("scanner_app.ocr.ocr_engine.frozen_bundle_dir", return_value=bundle_root):
+        ocr_engine._ensure_bundled_tools_available()
+
+    assert str(ocr_tools) in os.environ["PATH"].split(os.pathsep)
+
+
+def test_ensure_bundled_tools_adds_windows_subfolder_layout_to_path(tmp_path, restore_path):
+    # Windows (package.yml): jedes Werkzeug bekommt seinen eigenen Unterordner, da Windows-
+    # Programme ihre DLLs üblicherweise im eigenen Installationsordner erwarten.
+    bundle_root = tmp_path / "bundle"
+    ocr_tools = bundle_root / "ocr-tools"
+    (ocr_tools / "tesseract").mkdir(parents=True)
+    (ocr_tools / "qpdf").mkdir(parents=True)
+    gs_dir = ocr_tools / "ghostscript"
+    (gs_dir / "Resource").mkdir(parents=True)
+
+    with patch("scanner_app.ocr.ocr_engine.frozen_bundle_dir", return_value=bundle_root):
+        ocr_engine._ensure_bundled_tools_available()
+
+    path_entries = os.environ["PATH"].split(os.pathsep)
+    assert str(ocr_tools / "tesseract") in path_entries
+    assert str(ocr_tools / "qpdf") in path_entries
+    assert str(ocr_tools / "ghostscript") in path_entries
+    assert os.environ["GS_LIB"] == str(gs_dir / "Resource")
+
+
+def test_ensure_bundled_tools_is_noop_without_frozen_bundle(restore_path):
+    with patch("scanner_app.ocr.ocr_engine.frozen_bundle_dir", return_value=None):
+        before = os.environ.get("PATH", "")
+        ocr_engine._ensure_bundled_tools_available()
+        assert os.environ.get("PATH", "") == before

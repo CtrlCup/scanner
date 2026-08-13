@@ -284,6 +284,10 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+Enter"), self, activated=self._on_scan_requested)
         QShortcut(QKeySequence("Ctrl+N"), self, activated=self._on_scan_and_restart_requested)
 
+        # Läuft immer beim Start (nicht nur wenn OCR gerade aktiviert wird): OCR soll ohne
+        # jeden manuellen Schritt nutzbar sein, sobald der Nutzer den Toggle einschaltet.
+        self.settings_page.ensure_default_ocr_languages()
+
         # Verzögert, damit der Start-Vorgang der App selbst nicht blockiert/verzögert wird.
         # Die Prüfung von auto_update_check_enabled erfolgt bewusst erst beim Timer-Feuern
         # (nicht schon hier beim Scheduling) — Aufrufer wie Tests, die die Einstellung direkt

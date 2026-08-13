@@ -69,7 +69,12 @@ def window(app, tmp_path):
     from PySide6.QtCore import QSettings
 
     fake_devices = [ScannerDevice(device_id="fake0", display_name="Test-Scanner")]
-    with patch("scanner_app.ui.main_window.get_backend", return_value=_FakeScannerBackend(fake_devices)):
+    with (
+        patch("scanner_app.ui.main_window.get_backend", return_value=_FakeScannerBackend(fake_devices)),
+        # Verhindert den echten Netzwerkaufruf, den MainWindow beim Start sonst über
+        # SettingsPage.ensure_default_ocr_languages() auslöst (Sprachpaket-Download).
+        patch("scanner_app.ui.settings_page.ensure_default_languages_installed"),
+    ):
         win = MainWindow()
 
     win.settings._settings = QSettings(str(tmp_path / "settings.ini"), QSettings.Format.IniFormat)

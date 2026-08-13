@@ -23,6 +23,50 @@ mkdir -p "$OUT"
 
 echo "== PyInstaller-Bundle bauen (v$VERSION) =="
 rm -rf build "$DIST/Scanner"
+
+# OCR-Programme (tesseract/qpdf/ghostscript) mitbündeln, damit OCR ohne manuelle
+# System-Installation funktioniert — siehe ocr_engine.py::_ensure_bundled_tools_available().
+# MUSS nach dem "rm -rf build" oben stehen, sonst löscht das den gerade befüllten Ordner
+# wieder. build/ocr-tools landet über packaging/scanner.spec identisch in
+# tar.gz/AppImage/deb/rpm, da alle vier aus demselben dist/Scanner-Onedir-Build entstehen.
+echo "== OCR-Werkzeuge bündeln (tesseract/qpdf/ghostscript) =="
+OCR_TOOLS_DIR="build/ocr-tools"
+mkdir -p "$OCR_TOOLS_DIR"
+
+_copy_with_shared_libs() {
+  local tool="$1"
+  local real
+  real=$(command -v "$tool") || { echo "  WARNUNG: $tool nicht gefunden, wird übersprungen"; return; }
+  real=$(readlink -f "$real")
+  cp -L "$real" "$OCR_TOOLS_DIR/$tool"
+  # ldd liefert bereits die volle transitive Abhängigkeitsliste, kein rekursives Auflösen
+  # nötig. Basis-Systembibliotheken (libc, ld-linux, ...) bewusst NICHT mitkopieren — die
+  # dürfen/sollen vom jeweiligen Host-System kommen (ABI-Kompatibilität über Distros hinweg
+  # ist für genau diese Low-Level-Libs am ehesten gegeben; ein starres Mitkopieren würde bei
+  # abweichender libc-Version eher schaden als nützen).
+  ldd "$real" 2>/dev/null | awk '{print $3}' | grep '^/' | while read -r lib; do
+    base=$(basename "$lib")
+    case "$base" in
+      libc.so*|libm.so*|libpthread.so*|libdl.so*|ld-linux*|librt.so*|libresolv.so*|libutil.so*|libgcc_s.so*|libnsl.so*)
+        continue ;;
+    esac
+    [ -f "$OCR_TOOLS_DIR/$base" ] || cp -L "$lib" "$OCR_TOOLS_DIR/$base"
+  done
+}
+
+for tool in tesseract qpdf gs; do
+  _copy_with_shared_libs "$tool"
+done
+
+# rpath auf $ORIGIN setzen: die kopierten Programme/Bibliotheken finden sich damit
+# gegenseitig unabhängig vom Installationsort, ohne dass die App zur Laufzeit
+# LD_LIBRARY_PATH manipulieren muss.
+find "$OCR_TOOLS_DIR" -type f \( -name '*.so*' -o -perm -u+x \) -print0 2>/dev/null \
+  | while IFS= read -r -d '' f; do
+      patchelf --set-rpath '$ORIGIN' "$f" 2>/dev/null || true
+    done
+echo "  -> $(find "$OCR_TOOLS_DIR" -maxdepth 1 -type f | wc -l) Dateien in $OCR_TOOLS_DIR"
+
 QT_QPA_PLATFORM=offscreen "$PYINSTALLER" packaging/scanner.spec --distpath "$DIST" --workpath build --noconfirm
 
 echo "== .tar.gz =="

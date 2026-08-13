@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from scanner_app.ocr.language_manager import AVAILABLE_LANGUAGES, DEFAULT_LANGUAGES, tessdata_dir
+from scanner_app.resources import frozen_bundle_dir
 
 # Ghostscript heißt unter Windows gswin64c/gswin32c statt gs — pro Werkzeug reicht ein
 # Treffer aus den Kandidaten-Binärnamen (siehe missing_dependencies()).
@@ -20,6 +21,50 @@ _INSTALL_HINTS: dict[str, str] = {
     "qpdf": "https://github.com/qpdf/qpdf/releases bzw. „choco install qpdf“",
     "ghostscript": "https://www.ghostscript.com/download/gsdnld.html bzw. „choco install ghostscript“",
 }
+
+
+def _bundled_tools_dir() -> Path | None:
+    """Verzeichnis mit mitgelieferten OCR-Programmen (tesseract/qpdf/ghostscript), falls der
+    Build sie bündelt (siehe packaging/build_linux.sh bzw. package.yml für Windows) — None im
+    Dev-Betrieb oder wenn ein Build sie (noch) nicht enthält, dann zählt ausschließlich das
+    System-PATH.
+    """
+    base = frozen_bundle_dir()
+    if base is None:
+        return None
+    candidate = base / "ocr-tools"
+    return candidate if candidate.is_dir() else None
+
+
+def _ensure_bundled_tools_available() -> None:
+    """Stellt mitgelieferte OCR-Programme vor allen System-Installationen ins PATH und setzt
+    GS_LIB, falls ein gebündeltes Ghostscript-Resource-Verzeichnis existiert (Ghostscript
+    braucht das zwingend zusätzlich zur nackten Programmdatei). Läuft einmalig beim Import
+    dieses Moduls — vor jedem `missing_dependencies()`- oder `apply_ocr()`-Aufruf, auch dem
+    allerersten beim App-Start (Settings-Seite prüft die Abhängigkeiten schon beim Öffnen).
+
+    Unterstützt zwei Layouts gleichzeitig: Linux (build_linux.sh) kopiert alle Programme +
+    Shared Libraries flach in EIN gemeinsames Verzeichnis (rpath=$ORIGIN löst die
+    Bibliotheken auf); Windows (package.yml) kopiert pro Werkzeug einen eigenen
+    Unterordner (tesseract/, qpdf/, ghostscript/), da Windows-Programme ihre DLLs
+    üblicherweise im eigenen Installationsordner statt zentral erwarten. Beide Formen landen
+    daher im PATH: das Wurzelverzeichnis selbst UND alle direkten Unterordner.
+    """
+    bundled = _bundled_tools_dir()
+    if bundled is None:
+        return
+    candidate_dirs = [bundled, *(p for p in bundled.iterdir() if p.is_dir())]
+    path_entries = os.environ.get("PATH", "").split(os.pathsep)
+    new_entries = [str(d) for d in candidate_dirs if str(d) not in path_entries]
+    if new_entries:
+        os.environ["PATH"] = os.pathsep.join([*new_entries, *path_entries])
+
+    for resource_dir in bundled.glob("*/Resource"):
+        os.environ["GS_LIB"] = str(resource_dir)
+        break
+
+
+_ensure_bundled_tools_available()
 
 
 def missing_dependencies() -> list[str]:

@@ -20,6 +20,72 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -e ".[build]"
+      - name: OCR-Werkzeuge installieren und für das Bundle bereitstellen
+        # Bündelt tesseract/qpdf/ghostscript mit, damit OCR ohne manuelle System-Installation
+        # funktioniert (siehe ocr_engine.py::_ensure_bundled_tools_available()). Läuft VOR dem
+        # PyInstaller-Build, damit packaging/scanner.spec build\ocr-tools vorfindet.
+        #
+        # Chocolatey statt eigener Installer-Downloads: Ghostscripts offizieller Windows-
+        # Installer hat seine stille Installationsoption seit 10.01.0 bewusst entfernt
+        # (Entwickler-Entscheidung, wird nicht wieder aktiviert) — ein /S-Aufruf würde in CI
+        # also hängen bleiben. Chocolatey-Pakete lösen genau dieses Problem bereits robust,
+        # unabhängig vom jeweiligen Installer-Typ dahinter.
+        #
+        # ACHTUNG: Dieser Schritt konnte in der Entwicklungsumgebung (WSL2/Linux) nicht real
+        # gegen einen Windows-Runner verifiziert werden — Get-Command-Fallback-Pfade sind ein
+        # bestmöglicher, aber ungetesteter Versuch. Nach dem ersten echten Lauf ggf. anhand der
+        # Job-Logs nachjustieren.
+        shell: pwsh
+        run: |
+          choco install tesseract qpdf ghostscript --no-progress -y
+          refreshenv
+
+          $ocrTools = Join-Path $PWD "build\ocr-tools"
+          New-Item -ItemType Directory -Force -Path $ocrTools | Out-Null
+
+          function Find-ToolDir($exeNames) {
+            foreach ($name in $exeNames) {
+              $cmd = Get-Command $name -ErrorAction SilentlyContinue
+              if ($cmd) { return (Split-Path $cmd.Source -Parent) }
+            }
+            # Fallback: unter den üblichen Chocolatey-/Program-Files-Wurzeln suchen, falls
+            # refreshenv das PATH nicht rechtzeitig aktualisiert hat.
+            foreach ($root in @("C:\Program Files", "C:\ProgramData\chocolatey\lib")) {
+              foreach ($name in $exeNames) {
+                $found = Get-ChildItem -Path $root -Filter $name -Recurse -ErrorAction SilentlyContinue |
+                  Select-Object -First 1
+                if ($found) { return $found.DirectoryName }
+              }
+            }
+            return $null
+          }
+
+          function Copy-ToolDir($exeNames, $destName) {
+            $srcDir = Find-ToolDir $exeNames
+            if (-not $srcDir) {
+              Write-Warning "Kein Installationsverzeichnis für $($exeNames -join ', ') gefunden — OCR bleibt für diesen Build auf System-PATH angewiesen."
+              return
+            }
+            Copy-Item -Path $srcDir -Destination (Join-Path $ocrTools $destName) -Recurse -Force
+            Write-Host "$destName aus $srcDir gebündelt"
+          }
+
+          Copy-ToolDir @("tesseract.exe") "tesseract"
+          Copy-ToolDir @("qpdf.exe") "qpdf"
+          Copy-ToolDir @("gswin64c.exe", "gswin32c.exe") "ghostscript"
+
+          # Ghostscript braucht sein Resource-Verzeichnis zusätzlich zur reinen bin\-EXE —
+          # liegt üblicherweise eine Ebene über bin\ (…\gs\gs<version>\bin\gswin64c.exe).
+          $gsCmd = Get-Command gswin64c.exe -ErrorAction SilentlyContinue
+          if ($gsCmd) {
+            $gsRoot = Split-Path (Split-Path $gsCmd.Source -Parent) -Parent
+            $gsResource = Join-Path $gsRoot "Resource"
+            if (Test-Path $gsResource) {
+              Copy-Item -Path $gsResource -Destination (Join-Path $ocrTools "ghostscript\Resource") -Recurse -Force
+            }
+          }
+
+          Get-ChildItem -Recurse $ocrTools -ErrorAction SilentlyContinue | Measure-Object | ForEach-Object { Write-Host "$($_.Count) Dateien in build\ocr-tools" }
       - run: pyinstaller packaging/scanner.spec --distpath dist --workpath build --noconfirm
       - name: Version ermitteln und portable .exe versionieren
         id: version

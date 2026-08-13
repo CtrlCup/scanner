@@ -263,6 +263,34 @@ bei Bedarf ersetzen.
   erst nach einem gescheiterten Scan über die generische `MissingDependencyError`-Meldung von
   `ocrmypdf` zu zeigen. `apply_ocr()` prüft zusätzlich selbst vorab (zweites Sicherheitsnetz für
   den Fall, dass ein Tool zwischen App-Start und Scan aus dem PATH verschwindet).
+- **OCR "out of the box"**: `tesseract`/`qpdf`/`ghostscript` werden in JEDES Distributionspaket
+  (Windows Installer + portable .exe, Linux tar.gz/AppImage/deb/rpm) mitgebündelt — keine
+  manuelle System-Installation nötig. `build/ocr-tools/` wird vor dem PyInstaller-Lauf befüllt
+  (`packaging/build_linux.sh` bzw. der windows-Job in `package.yml`) und über
+  `packaging/scanner.spec`s `datas` mit ins Bundle aufgenommen. Zwei Layouts, je nach
+  Plattform-Konvention: Linux kopiert alle Programme+Shared-Libraries **flach** in einen
+  gemeinsamen Ordner und setzt via `patchelf --set-rpath '$ORIGIN'` jede Bibliothek/jedes
+  Programm darauf, sich gegenseitig relativ zum eigenen Ordner zu finden (kein
+  `LD_LIBRARY_PATH` zur Laufzeit nötig) — **real gegen ein frisches `ubuntu:26.04`-Docker-Image
+  ganz ohne System-tesseract/qpdf/ghostscript verifiziert**. Windows kopiert pro Werkzeug einen
+  **eigenen Unterordner** (`ocr-tools/tesseract/`, `.../qpdf/`, `.../ghostscript/` inkl.
+  `Resource/`), da Windows-Programme ihre DLLs konventionell im eigenen Installationsordner
+  statt zentral erwarten; die Werkzeuge kommen dort über `choco install tesseract qpdf
+  ghostscript` (nicht per eigenem Installer-Download — Ghostscripts offizieller Windows-
+  Installer hat seine stille Installationsoption seit 10.01.0 bewusst entfernt, s.
+  `package.yml`-Kommentar). `ocr_engine._ensure_bundled_tools_available()` erkennt beim
+  Modulimport, welches Layout vorliegt (bzw. keins im Dev-Betrieb) und hängt die passenden
+  Verzeichnisse vors PATH — **der Windows-Teil (`package.yml`) konnte in dieser WSL2/Linux-
+  Dev-Umgebung nicht real gegen einen Windows-Runner verifiziert werden**, nur der Linux-Pfad.
+  Sprachpakete (Deutsch+Englisch) lädt `SettingsPage.ensure_default_ocr_languages()` beim
+  App-Start automatisch im Hintergrund nach — zusammen mit den gebündelten Programmen ist OCR
+  damit ohne jeden manuellen Schritt sofort nutzbar. Tesseracts eigene Ausgabeformat-Configs
+  (`hocr`/`pdf`/`txt`) werden als winzige App-Ressource (`resources/tesseract-configs/`)
+  mitgeliefert und beim ersten Zugriff auf `tessdata_dir()` hineinkopiert — ohne sie bricht
+  Tesseract mit `TesseractConfigError`/„Can't open hocr" ab, weil `TESSDATA_PREFIX` bewusst auf
+  ein isoliertes, nur mit Sprachdaten befülltes Verzeichnis zeigt (siehe
+  `language_manager.py`). Dieser Bug war real und testabdeckungs-bedingt monatelang unbemerkt
+  (der zugehörige Test war übersprungen, bis Sprachpakete automatisch heruntergeladen wurden).
 - **Automatisches Drehen** (eigener Einstellungen-Toggle, unabhängig von OCR): nach jedem Scan
   wird die Ausrichtung der Seite per Tesseract-OSD (`scanner_app/ocr/orientation.py`) erkannt
   und die Seite automatisch in die erkannte Richtung gedreht — best effort, bei fehlender
