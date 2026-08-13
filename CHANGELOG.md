@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.10.1 (2026-08-13)
+
+### Bug Fixes
+
+- Close temp file handle before deleting it in download_installer
+  ([`975ddd9`](https://github.com/CtrlCup/scanner/commit/975ddd9e23239a5cbe088681880c670b0fed5e9d))
+
+
 ## v0.10.0 (2026-08-13)
 
 ### Features
