@@ -9,16 +9,36 @@ im Betriebssystem hinterlegte Scanner/Drucker, Mehrseiten-PDF-Erstellung mit dir
 nach jedem Scan, Seitenverwaltung (löschen, neu anordnen, rotieren), OCR-Texterkennung vor dem
 PDF-Speichern.
 
-UI-Vorlage: Figma-artiges Claude-Design unter `claude.ai/design/p/476beec9-...` ("Scanner App").
-Referenzlayout: Fenstertitel mit Scanner-Namen, linkes Einstellungspanel (Scanner-Auswahl, Quelle,
-Dateityp, Farbmodus, Auflösung, Helligkeit/Kontrast, automatische Bildkorrektur), rechtes
-Vorschau-Panel (großer Preview + Thumbnail-Leiste der gescannten Seiten), Gear-Icon für
-App-Einstellungen (OCR an/aus + Sprachauswahl, Theme, Speicherpfad).
+**UI-Vorlage (verbindlich, pixelgetreu umzusetzen):** von Alex als HTML-Mockup vorgegeben
+(`Dokumentenscanner-UI.html`, ein selbstentpackendes Claude-Artifact-Bundle — die eigentliche
+Struktur/Styles/Farbwerte liegen darin base64/gzip-komprimiert in
+`<script type="__bundler/template">` bzw. `__bundler/manifest`; zum Auslesen im Browser öffnen
+oder das Manifest per Python `base64.b64decode` + `gzip.decompress` entpacken). Referenzlayout:
+selbstgezeichnete Titelleiste („Scanner" + eigene Minimize/Maximize/Close-Buttons), schmale
+Icon-Leiste ganz links (Scan-Button oben, Ordner-Icon = **Speicherort öffnen** — nicht wählen —
+und Zahnrad unten), Einstellungspanel (Scanner-Karte, Quelle, Dateityp, Farbmodus, Auflösung,
+Helligkeit/Kontrast, automatische Bildkorrektur, Scan-Button + „+"), rechtes Vorschau-Panel
+(weiße „Papier"-Karte mit Schatten + Thumbnail-Leiste). Exakte Farbwerte/Abstände siehe
+`src/scanner_app/ui/theme.py` (Light-/Dark-Palette 1:1 aus dem Mockup übernommen).
+
+**Falle beim Nachbauen der Mockup-SVG-Icons:** `QSvgRenderer.render(painter)` **ohne**
+Ziel-`QRectF` zeichnet in der nativen viewBox-Größe des SVGs (z.B. 24×24 Einheiten) oben links
+in die Pixmap statt auf deren volle Größe skaliert — sichtbar als abgeschnittenes Mini-Icon in
+der Ecke. Zusätzlich ignoriert `QtSvg` `rgba(...)`-Farbfunktionen in `stroke`/`fill`-Attributen
+lautlos (Icon bleibt unsichtbar) — dort sind nur Hex-/Named-/`rgb()`-Farben zulässig, siehe
+`src/scanner_app/ui/icons.py::svg_icon()`.
 
 ## Tech-Stack
 
-- **Python** (>=3.10) mit **PySide6** (Qt6) für die UI — natives Fenster pro Betriebssystem
-  (kein selbstgezeichneter Fensterrahmen), Look & Feel per QSS an das Design angenähert
+- **Python** (>=3.10) mit **PySide6** (Qt6) für die UI. Bewusste Kursänderung gegenüber einer
+  früheren Version dieser Datei: die App verwendet **kein natives Fensterdekor** mehr, sondern
+  ein komplett selbstgezeichnetes Fenster (`FramelessWindowHint` + `WA_TranslucentBackground`,
+  eigene Titelleiste mit Minimize/Maximize/Close, abgerundete Ecken, Schlagschatten via
+  `QGraphicsDropShadowEffect`, Rand-Resize über `QWindow.startSystemResize()`) — Ziel ist ein auf
+  Windows und Linux pixelidentisches Erscheinungsbild nach dem verbindlichen Design-Mockup
+  (siehe unten), da native Titelleisten sich zwischen den Plattformen sichtbar unterscheiden.
+  Siehe `src/scanner_app/ui/main_window.py` (`_ResizableRoot`, `MainWindow`) und
+  `src/scanner_app/ui/widgets/window_chrome.py` (`TitleBar`, `IconRail`).
 - **Scanner-Zugriff:** `python-sane` unter Linux (SANE), WIA via `pywin32`-COM-Automation unter
   Windows — siehe `src/scanner_app/backend/`
 - **PDF/Bild:** `Pillow` (Bildbearbeitung/Rotation/Thumbnails), `img2pdf` (verlustfreie
@@ -189,10 +209,24 @@ bei Bedarf ersetzen.
   `auto_update_check_enabled`; die Prüfung dieser Einstellung erfolgt bewusst erst beim
   Timer-Feuern, nicht beim Scheduling (relevant für Tests, die sie direkt danach ändern).
 - Einstellungen sind eine **eingebettete Seite** (`SettingsPage`, `QStackedWidget` in
-  `main_window.py`), kein separates Fenster/Dialog — Navigation über Gear-Icon (hin) und
-  „← Zurück"-Button (zurück). Der Seiteninhalt liegt in einer `QScrollArea` mit auf
-  ~640px begrenzter, zentrierter Breite (sonst zieht sich jede Zeile über die volle
-  Fensterbreite); am Ende der `content`-Layout steht bewusst ein `addStretch()`, sonst
-  verteilt Qt überschüssige Höhe auf die Zeilen und bläst sie unnötig auf. Bei künftigen
-  neuen Optionen ins `content`-Widget der Scroll-Area einhängen, nicht direkt in
-  `outer_layout`.
+  `main_window.py`), kein separates Fenster/Dialog — Navigation über das Zahnrad in der
+  `IconRail` (hin, siehe `window_chrome.py`) und den Zurück-Pfeil im Seitenkopf (zurück). Der
+  Seiteninhalt liegt in einer `QScrollArea` mit auf ~520px begrenzter, zentrierter Breite (sonst
+  zieht sich jede Zeile über die volle Fensterbreite); am Ende der `content`-Layout steht bewusst
+  ein `addStretch()`, sonst verteilt Qt überschüssige Höhe auf die Zeilen und bläst sie unnötig
+  auf. Bei künftigen neuen Optionen ins `content`-Widget der Scroll-Area einhängen, nicht direkt
+  in `outer_layout`.
+- **Ordner-Icon in der `IconRail`** (unten links, über dem Zahnrad) **öffnet** den aktuellen
+  Speicherort im OS-Dateimanager (`QDesktopServices.openUrl`) — es öffnet **keinen**
+  Verzeichnisauswahl-Dialog. Den Speicherort **ändern** kann man ausschließlich über
+  „Standard-Speicherort" → „Durchsuchen…" auf der Einstellungen-Seite. Beim Hovern über das
+  Ordner-Icon zeigt ein `PathPopover` (siehe `window_chrome.py`) den aktuellen Pfad.
+- Weitere App-Settings ohne direkte Entsprechung im ursprünglichen Design-Mockup, aber reale
+  Funktionalität (siehe `app_settings.py`): `auto_load_last_scanner` (steuert, ob
+  `SettingsPanel.refresh_devices()` den zuletzt verwendeten Scanner vorauswählt),
+  `show_thumbnails` (blendet die Thumbnail-Leiste im Vorschau-Panel aus), `notify_on_finish`
+  (steuert die Toast-Meldung nach dem Speichern eines Scans — das eingebettete `Toast`-Widget,
+  keine OS-Benachrichtigung), `default_filename_pattern` (Dateinamensmuster mit Platzhaltern
+  `{Datum}` und `{Nummer}`, siehe `models/document.py::generate_filename()` — enthält das Muster
+  `{Nummer}`, sucht `MainWindow._first_free_path()` die nächste freie laufende Nummer im
+  Zielordner statt wie sonst „ (2)", „ (3)" anzuhängen).

@@ -190,7 +190,7 @@ def test_handwriting_setting_persisted_from_page(window):
 def test_gear_icon_navigates_to_settings_page_and_back(window):
     assert window._stack.currentWidget() is not window.settings_page
 
-    window.settings_panel.openSettingsRequested.emit()
+    window._icon_rail.settingsRequested.emit()
     assert window._stack.currentWidget() is window.settings_page
 
     window.settings_page.backRequested.emit()

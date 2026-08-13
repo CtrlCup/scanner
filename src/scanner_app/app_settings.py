@@ -12,6 +12,7 @@ DEFAULT_THEME = "system"
 DEFAULT_ACCENT = "#0067C0"
 ACCENT_SWATCHES = ["#0067C0", "#038387", "#744DA9", "#498205"]
 DEFAULT_OCR_LANGUAGES = ["Deutsch", "Englisch"]
+DEFAULT_FILENAME_PATTERN = "Scan_{Datum}_{Nummer}"
 
 
 class AppSettings:
@@ -88,6 +89,38 @@ class AppSettings:
     @auto_update_check_enabled.setter
     def auto_update_check_enabled(self, value: bool) -> None:
         self._settings.setValue("auto_update_check_enabled", value)
+
+    @property
+    def default_filename_pattern(self) -> str:
+        return self._settings.value("default_filename_pattern", DEFAULT_FILENAME_PATTERN, type=str)
+
+    @default_filename_pattern.setter
+    def default_filename_pattern(self, value: str) -> None:
+        self._settings.setValue("default_filename_pattern", value or DEFAULT_FILENAME_PATTERN)
+
+    @property
+    def auto_load_last_scanner(self) -> bool:
+        return self._settings.value("auto_load_last_scanner", True, type=bool)
+
+    @auto_load_last_scanner.setter
+    def auto_load_last_scanner(self, value: bool) -> None:
+        self._settings.setValue("auto_load_last_scanner", value)
+
+    @property
+    def show_thumbnails(self) -> bool:
+        return self._settings.value("show_thumbnails", True, type=bool)
+
+    @show_thumbnails.setter
+    def show_thumbnails(self, value: bool) -> None:
+        self._settings.setValue("show_thumbnails", value)
+
+    @property
+    def notify_on_finish(self) -> bool:
+        return self._settings.value("notify_on_finish", True, type=bool)
+
+    @notify_on_finish.setter
+    def notify_on_finish(self, value: bool) -> None:
+        self._settings.setValue("notify_on_finish", value)
 
     @property
     def last_device_id(self) -> str | None:

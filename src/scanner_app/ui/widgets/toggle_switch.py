@@ -10,14 +10,16 @@ class ToggleSwitch(QAbstractButton):
     das würde nicht zum restlichen, kartenbasierten Design passen).
     """
 
-    def __init__(self, parent: QWidget | None = None, accent: str = "#0067C0") -> None:
+    def __init__(
+        self, parent: QWidget | None = None, accent: str = "#0067C0", track_off: str = "#33000000"
+    ) -> None:
         super().__init__(parent)
         self.setCheckable(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setFixedSize(42, 24)
+        self.setFixedSize(38, 22)
         self._accent = QColor(accent)
-        self._track_off = QColor("#3a3b40")
-        self._handle_pos = 3.0
+        self._track_off = QColor(track_off)
+        self._handle_pos = 2.0
         self._anim = QPropertyAnimation(self, b"handlePos", self)
         self._anim.setDuration(150)
         self._anim.setEasingCurve(QEasingCurve.Type.InOutCubic)
@@ -26,8 +28,12 @@ class ToggleSwitch(QAbstractButton):
     def _animate_to_state(self, checked: bool) -> None:
         self._anim.stop()
         self._anim.setStartValue(self._handle_pos)
-        self._anim.setEndValue(21.0 if checked else 3.0)
+        self._anim.setEndValue(18.0 if checked else 2.0)
         self._anim.start()
+
+    def set_track_off_color(self, color: str) -> None:
+        self._track_off = QColor(color)
+        self.update()
 
     def _get_handle_pos(self) -> float:
         return self._handle_pos
@@ -48,7 +54,7 @@ class ToggleSwitch(QAbstractButton):
         # anstößt. Falsche Reihenfolge lässt die Animation kurz zur alten Position zurück-
         # springen, bevor sie zur neuen zurückanimiert — sichtbar als falsch positionierter
         # Handle direkt nach dem (nicht-interaktiven) Setzen des Anfangszustands.
-        self._handle_pos = 21.0 if checked else 3.0
+        self._handle_pos = 18.0 if checked else 2.0
         super().setChecked(checked)
 
     def paintEvent(self, event) -> None:
@@ -61,7 +67,7 @@ class ToggleSwitch(QAbstractButton):
         if not self.isEnabled():
             track_color = QColor(self._track_off).darker(120)
         painter.setBrush(track_color)
-        painter.drawRoundedRect(QRectF(0, 0, self.width(), self.height()), 12, 12)
+        painter.drawRoundedRect(QRectF(0, 0, self.width(), self.height()), 11, 11)
 
         painter.setBrush(QColor("white"))
-        painter.drawEllipse(QRectF(self._handle_pos, 3, 18, 18))
+        painter.drawEllipse(QRectF(self._handle_pos, 2, 18, 18))

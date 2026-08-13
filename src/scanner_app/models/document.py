@@ -83,9 +83,22 @@ class Document:
         raise KeyError(page_id)
 
 
-def generate_filename(document_type: DocumentType, *, when: datetime | None = None) -> str:
-    """Default filename for a new scan: 'Scan_YYYY-MM-DD_HH-MM-SS.<ext>'."""
+def generate_filename(
+    document_type: DocumentType,
+    *,
+    when: datetime | None = None,
+    pattern: str = "Scan_{Datum}_{Nummer}",
+    sequence: int = 1,
+) -> str:
+    """Dateiname aus einem Muster mit den Platzhaltern ``{Datum}`` (Zeitstempel bis auf die
+    Sekunde) und ``{Nummer}`` (laufende, 3-stellig gepolsterte Nummer innerhalb desselben
+    Speicherordners — vom Aufrufer über `sequence` übergeben, da diese Funktion selbst
+    nichts vom Dateisystem weiß). Enthält das Muster keinen der beiden Platzhalter, bleibt
+    der Name für jeden Scan gleich — Kollisionen löst der Aufrufer (siehe
+    `MainWindow._make_unique_path`).
+    """
     when = when or datetime.now()  # noqa: DTZ005 - bewusst lokale Wanduhrzeit für Dateinamen
     stamp = when.strftime("%Y-%m-%d_%H-%M-%S")
     extension = "pdf" if document_type is DocumentType.PDF else "png"
-    return f"Scan_{stamp}.{extension}"
+    stem = pattern.format(Datum=stamp, Nummer=f"{sequence:03d}")
+    return f"{stem}.{extension}"

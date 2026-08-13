@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime
 
 from PySide6.QtCore import QObject, Qt, QThread, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
+    QFileDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
@@ -24,6 +25,7 @@ from scanner_app.ocr.language_manager import (
     is_language_installed,
 )
 from scanner_app.ocr.orientation import ensure_osd_installed
+from scanner_app.ui import icons
 from scanner_app.ui.widgets.segmented_control import SegmentedControl
 from scanner_app.ui.widgets.toggle_switch import ToggleSwitch
 from scanner_app.update_checker import UpdateInfo, check_for_update
@@ -67,11 +69,26 @@ class _UpdateCheckWorker(QObject):
         self.finished.emit(check_for_update(self._current_version))
 
 
+def _section_label(text: str) -> QLabel:
+    label = QLabel(text)
+    label.setProperty("role", "sectionLabel")
+    return label
+
+
+def _divider() -> QFrame:
+    line = QFrame()
+    line.setObjectName("settingsDivider")
+    line.setFrameShape(QFrame.Shape.HLine)
+    return line
+
+
 class SettingsPage(QWidget):
-    """Eingebettete Einstellungen-Seite (kein separates Fenster): automatisches Drehen,
-    OCR an/aus + Sprachauswahl (Chips mit Installiert-Status, On-Demand-Hintergrund-Download)
-    + optionale Handschrift-Erkennung (nur bei aktiviertem OCR), Theme, Akzentfarbe,
-    Footer mit GitHub-Link. Über backRequested navigiert das Hauptfenster zurück zur
+    """Eingebettete Einstellungen-Seite (kein separates Fenster), Struktur/Optik gemäß dem
+    vorgegebenen Design-Mockup: Erscheinungsbild, Standard-Speicherort, Standard-Dateinamens-
+    muster, Toggle-Gruppe (Scanner beim Start laden, Miniaturansichten, Benachrichtigung,
+    automatisches Drehen, OCR an/aus + Sprachauswahl + optionale Handschrift-Erkennung),
+    zusätzlich Akzentfarbe und Update-Check (im Mockup nicht enthalten, aber reale
+    App-Funktionalität). Über backRequested navigiert das Hauptfenster zurück zur
     Scanner-Ansicht.
     """
 
@@ -79,11 +96,13 @@ class SettingsPage(QWidget):
     accentChanged = Signal(str)
     themeChanged = Signal(str)
     ocrSettingsChanged = Signal()
+    showThumbnailsChanged = Signal(bool)
+    saveDirectoryChanged = Signal(str)
     updateAvailable = Signal(object)  # UpdateInfo, emitted wenn eine neue Version gefunden wird
 
     def __init__(self, settings: AppSettings, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setObjectName("rightPanel")
+        self.setObjectName("settingsPage")
         self._settings = settings
         self._threads: list[QThread] = []
         self._language_chips: dict[str, QPushButton] = {}
@@ -93,15 +112,24 @@ class SettingsPage(QWidget):
         outer_layout.setContentsMargins(0, 0, 0, 0)
         outer_layout.setSpacing(0)
 
-        header = QHBoxLayout()
-        header.setContentsMargins(20, 20, 20, 12)
-        back_button = QPushButton("← Zurück")
-        back_button.setProperty("role", "icon")
+        header = QWidget()
+        header.setObjectName("settingsHeader")
+        header_row = QHBoxLayout(header)
+        header_row.setContentsMargins(16, 0, 20, 0)
+        header.setFixedHeight(56)
+        back_button = QPushButton()
+        back_button.setObjectName("railIconButton")
+        back_button.setIcon(icons.svg_icon(icons.BACK_ARROW, "#8a8a8a", size=16))
+        back_button.setFixedSize(30, 30)
         back_button.setCursor(Qt.CursorShape.PointingHandCursor)
         back_button.clicked.connect(self.backRequested)
-        header.addWidget(back_button)
-        header.addStretch()
-        outer_layout.addLayout(header)
+        header_row.addWidget(back_button)
+        header_row.addSpacing(6)
+        header_label = QLabel("Einstellungen")
+        header_label.setObjectName("settingsHeaderLabel")
+        header_row.addWidget(header_label)
+        header_row.addStretch()
+        outer_layout.addWidget(header)
 
         scroll_area = QScrollArea()
         scroll_area.setObjectName("settingsScrollArea")
@@ -118,56 +146,108 @@ class SettingsPage(QWidget):
         scroll_area.setWidget(centering_wrapper)
 
         content = QWidget()
-        content.setMaximumWidth(640)
+        content.setMaximumWidth(520)
         centering_layout.addStretch()
         centering_layout.addWidget(content)
         centering_layout.addStretch()
 
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(20, 0, 20, 20)
+        layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(16)
 
-        auto_rotate_row = QHBoxLayout()
-        auto_rotate_label = QLabel("Dokument automatisch drehen")
-        auto_rotate_label.setProperty("role", "sectionLabel")
-        auto_rotate_row.addWidget(auto_rotate_label)
-        auto_rotate_row.addStretch()
-        self._auto_rotate_toggle = ToggleSwitch(accent=settings.accent_color)
-        self._auto_rotate_toggle.setChecked(settings.auto_rotate_enabled)
-        self._auto_rotate_toggle.toggled.connect(self._on_auto_rotate_toggled)
-        auto_rotate_row.addWidget(self._auto_rotate_toggle)
-        layout.addLayout(auto_rotate_row)
-        auto_rotate_hint = QLabel(
-            "Erkennt die Ausrichtung jeder gescannten Seite automatisch und dreht sie "
-            "in die richtige Richtung."
+        # -- Erscheinungsbild ---------------------------------------------------------
+        layout.addWidget(_section_label("ERSCHEINUNGSBILD"))
+        self._theme_control = SegmentedControl(list(_THEME_LABELS.keys()))
+        self._theme_control.set_current(_THEME_LABELS_REVERSE.get(settings.theme, "Automatisch"))
+        self._theme_control.currentChanged.connect(self._on_theme_changed)
+        layout.addWidget(self._theme_control)
+
+        accent_label = QLabel("AKZENTFARBE")
+        accent_label.setProperty("role", "sectionLabel")
+        layout.addWidget(accent_label)
+        accent_row = QHBoxLayout()
+        self._accent_swatches: dict[str, QPushButton] = {}
+        for color in ACCENT_SWATCHES:
+            swatch = QPushButton()
+            swatch.setFixedSize(26, 26)
+            swatch.setCursor(Qt.CursorShape.PointingHandCursor)
+            swatch.clicked.connect(lambda _checked, c=color: self._on_accent_selected(c))
+            self._accent_swatches[color] = swatch
+            accent_row.addWidget(swatch)
+        accent_row.addStretch()
+        layout.addLayout(accent_row)
+        self._refresh_accent_swatches()
+
+        layout.addWidget(_divider())
+
+        # -- Standard-Speicherort -------------------------------------------------------
+        layout.addWidget(_section_label("STANDARD-SPEICHERORT"))
+        path_row = QHBoxLayout()
+        path_row.setSpacing(8)
+        self._save_path_edit = QLineEdit(str(settings.save_directory))
+        self._save_path_edit.setReadOnly(True)
+        path_row.addWidget(self._save_path_edit, stretch=1)
+        browse_button = QPushButton("Durchsuchen…")
+        browse_button.setProperty("role", "secondary")
+        browse_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        browse_button.clicked.connect(self._on_browse_save_directory)
+        path_row.addWidget(browse_button)
+        layout.addLayout(path_row)
+
+        # -- Standard-Dateinamensmuster --------------------------------------------------
+        layout.addWidget(_section_label("STANDARD-DATEINAMENSMUSTER"))
+        self._filename_pattern_edit = QLineEdit(settings.default_filename_pattern)
+        self._filename_pattern_edit.textChanged.connect(self._on_filename_pattern_changed)
+        layout.addWidget(self._filename_pattern_edit)
+        pattern_hint = QLabel("Platzhalter: {Datum}, {Nummer}")
+        pattern_hint.setProperty("role", "hint")
+        layout.addWidget(pattern_hint)
+
+        layout.addWidget(_divider())
+
+        # -- Toggle-Gruppe ----------------------------------------------------------------
+        self._auto_load_toggle = self._add_toggle_row(
+            layout, "Zuletzt verwendeten Scanner beim Start laden", settings.auto_load_last_scanner
         )
-        auto_rotate_hint.setProperty("role", "hint")
-        auto_rotate_hint.setWordWrap(True)
-        layout.addWidget(auto_rotate_hint)
+        self._auto_load_toggle.toggled.connect(self._on_auto_load_toggled)
 
-        layout.addWidget(self._separator())
+        self._show_thumbs_toggle = self._add_toggle_row(
+            layout, "Miniaturansichten in der Vorschau anzeigen", settings.show_thumbnails
+        )
+        self._show_thumbs_toggle.toggled.connect(self._on_show_thumbnails_toggled)
 
-        ocr_row = QHBoxLayout()
-        ocr_label = QLabel("OCR-Texterkennung")
-        ocr_label.setProperty("role", "sectionLabel")
-        ocr_row.addWidget(ocr_label)
-        ocr_row.addStretch()
-        self._ocr_toggle = ToggleSwitch(accent=settings.accent_color)
-        self._ocr_toggle.setChecked(settings.ocr_enabled)
+        self._notify_toggle = self._add_toggle_row(
+            layout, "Benachrichtigung nach Fertigstellung", settings.notify_on_finish
+        )
+        self._notify_toggle.toggled.connect(self._on_notify_toggled)
+
+        self._auto_rotate_toggle = self._add_toggle_row(
+            layout, "Dokument automatisch drehen", settings.auto_rotate_enabled
+        )
+        self._auto_rotate_toggle.toggled.connect(self._on_auto_rotate_toggled)
+
+        self._ocr_toggle = self._add_toggle_row(
+            layout, "OCR (Texterkennung) aktivieren", settings.ocr_enabled
+        )
         self._ocr_toggle.toggled.connect(self._on_ocr_toggled)
-        ocr_row.addWidget(self._ocr_toggle)
-        layout.addLayout(ocr_row)
 
         self._language_section = QWidget()
         language_layout = QVBoxLayout(self._language_section)
-        language_layout.setContentsMargins(0, 0, 0, 0)
-        language_hint = QLabel("Primärsprachen (Mehrfachauswahl, werden bei Bedarf heruntergeladen)")
-        language_hint.setProperty("role", "hint")
-        language_hint.setWordWrap(True)
+        language_layout.setContentsMargins(0, 10, 0, 0)
+        language_layout.setSpacing(10)
+        language_layout.addWidget(_divider())
+
+        self._handwriting_toggle = self._add_toggle_row(
+            language_layout, "Handschrift-Erkennung", settings.handwriting_enabled
+        )
+        self._handwriting_toggle.toggled.connect(self._on_handwriting_toggled)
+
+        language_hint = QLabel("Primärsprachen (werden bei Bedarf heruntergeladen)")
+        language_hint.setProperty("role", "sectionLabel")
         language_layout.addWidget(language_hint)
 
         chip_grid = QGridLayout()
-        chip_grid.setSpacing(6)
+        chip_grid.setSpacing(8)
         columns = 3
         selected = set(settings.ocr_languages)
         for index, name in enumerate(AVAILABLE_LANGUAGES):
@@ -182,55 +262,12 @@ class SettingsPage(QWidget):
             chip_grid.addWidget(chip, index // columns, index % columns)
         language_layout.addLayout(chip_grid)
 
-        handwriting_row = QHBoxLayout()
-        handwriting_label = QLabel("Handschrift-Erkennung")
-        handwriting_row.addWidget(handwriting_label)
-        handwriting_row.addStretch()
-        self._handwriting_toggle = ToggleSwitch(accent=settings.accent_color)
-        self._handwriting_toggle.setChecked(settings.handwriting_enabled)
-        self._handwriting_toggle.toggled.connect(self._on_handwriting_toggled)
-        handwriting_row.addWidget(self._handwriting_toggle)
-        language_layout.addLayout(handwriting_row)
-        handwriting_hint = QLabel(
-            "Optimiert die Texterkennung für handschriftliche Notizen. Ergebnisse sind bei "
-            "Handschrift grundsätzlich weniger zuverlässig als bei Druckschrift."
-        )
-        handwriting_hint.setProperty("role", "hint")
-        handwriting_hint.setWordWrap(True)
-        language_layout.addWidget(handwriting_hint)
-
         layout.addWidget(self._language_section)
         self._language_section.setVisible(settings.ocr_enabled)
 
-        layout.addWidget(self._separator())
+        layout.addWidget(_divider())
 
-        theme_label = QLabel("DARSTELLUNG")
-        theme_label.setProperty("role", "sectionLabel")
-        layout.addWidget(theme_label)
-        self._theme_control = SegmentedControl(list(_THEME_LABELS.keys()))
-        self._theme_control.set_current(_THEME_LABELS_REVERSE.get(settings.theme, "Automatisch"))
-        self._theme_control.currentChanged.connect(self._on_theme_changed)
-        layout.addWidget(self._theme_control)
-
-        accent_label = QLabel("AKZENTFARBE")
-        accent_label.setProperty("role", "sectionLabel")
-        layout.addWidget(accent_label)
-        accent_row = QHBoxLayout()
-        for color in ACCENT_SWATCHES:
-            swatch = QPushButton()
-            swatch.setFixedSize(28, 28)
-            swatch.setCursor(Qt.CursorShape.PointingHandCursor)
-            swatch.setStyleSheet(
-                f"background-color: {color}; border-radius: 14px; "
-                f"border: 2px solid {'white' if color == settings.accent_color else 'transparent'};"
-            )
-            swatch.clicked.connect(lambda _checked, c=color: self._on_accent_selected(c))
-            accent_row.addWidget(swatch)
-        accent_row.addStretch()
-        layout.addLayout(accent_row)
-
-        layout.addWidget(self._separator())
-
+        # -- Updates ------------------------------------------------------------------------
         auto_update_row = QHBoxLayout()
         auto_update_label = QLabel("Automatisch nach Updates suchen")
         auto_update_label.setProperty("role", "sectionLabel")
@@ -248,6 +285,7 @@ class SettingsPage(QWidget):
         update_row.addWidget(self._update_status_label)
         update_row.addStretch()
         self._check_update_button = QPushButton("Jetzt prüfen")
+        self._check_update_button.setProperty("role", "secondary")
         self._check_update_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self._check_update_button.clicked.connect(self._on_check_updates_clicked)
         update_row.addWidget(self._check_update_button)
@@ -260,15 +298,15 @@ class SettingsPage(QWidget):
         self._download_update_button.clicked.connect(self._on_open_update_clicked)
         layout.addWidget(self._download_update_button)
 
-        layout.addWidget(self._separator())
-        year = datetime.now().year  # noqa: DTZ005 - bewusst lokales Jahr für die Fußzeile
-        footer = QLabel(f"Mit ❤ von Alex entwickelt · v{__version__} · {year}")
-        footer.setProperty("role", "hint")
+        layout.addWidget(_divider())
+
+        footer = QLabel(f"Mit <span style='color:#e0304a'>❤</span> von Alex entwickelt · v{__version__}")
+        footer.setObjectName("footerCredit")
         footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(footer)
 
         github_link = QLabel(f'<a href="{_GITHUB_URL}">GitHub-Projekt ansehen</a>')
-        github_link.setProperty("role", "hint")
+        github_link.setObjectName("footerLink")
         github_link.setAlignment(Qt.AlignmentFlag.AlignCenter)
         github_link.setOpenExternalLinks(False)
         github_link.linkActivated.connect(lambda url: QDesktopServices.openUrl(url))
@@ -280,11 +318,42 @@ class SettingsPage(QWidget):
         # sichtbar macht).
         layout.addStretch()
 
-    @staticmethod
-    def _separator() -> QFrame:
-        line = QFrame()
-        line.setFrameShape(QFrame.Shape.HLine)
-        return line
+    def _add_toggle_row(self, layout: QVBoxLayout, label_text: str, checked: bool) -> ToggleSwitch:
+        row = QHBoxLayout()
+        label = QLabel(label_text)
+        row.addWidget(label)
+        row.addStretch()
+        toggle = ToggleSwitch(accent=self._settings.accent_color)
+        toggle.setChecked(checked)
+        row.addWidget(toggle)
+        layout.addLayout(row)
+        return toggle
+
+    # -- Standard-Speicherort ---------------------------------------------------------
+
+    def _on_browse_save_directory(self) -> None:
+        directory = QFileDialog.getExistingDirectory(
+            self, "Speicherpfad wählen", str(self._settings.save_directory)
+        )
+        if directory:
+            self._settings.save_directory = directory
+            self._save_path_edit.setText(directory)
+            self.saveDirectoryChanged.emit(directory)
+
+    def _on_filename_pattern_changed(self, text: str) -> None:
+        self._settings.default_filename_pattern = text
+
+    # -- Toggle-Gruppe ------------------------------------------------------------------
+
+    def _on_auto_load_toggled(self, checked: bool) -> None:
+        self._settings.auto_load_last_scanner = checked
+
+    def _on_show_thumbnails_toggled(self, checked: bool) -> None:
+        self._settings.show_thumbnails = checked
+        self.showThumbnailsChanged.emit(checked)
+
+    def _on_notify_toggled(self, checked: bool) -> None:
+        self._settings.notify_on_finish = checked
 
     # -- Automatisches Drehen -------------------------------------------------------
 
@@ -372,8 +441,18 @@ class SettingsPage(QWidget):
         self._settings.theme = theme
         self.themeChanged.emit(theme)
 
+    def _refresh_accent_swatches(self) -> None:
+        current = self._settings.accent_color
+        for color, swatch in self._accent_swatches.items():
+            border = "white" if color == current else "transparent"
+            swatch.setStyleSheet(
+                f"background-color: {color}; border-radius: 13px; "
+                f"border: 2px solid {border};"
+            )
+
     def _on_accent_selected(self, color: str) -> None:
         self._settings.accent_color = color
+        self._refresh_accent_swatches()
         self.accentChanged.emit(color)
 
     # -- Updates ------------------------------------------------------------------------
@@ -426,7 +505,7 @@ class SettingsPage(QWidget):
         """Wartet auf alle noch laufenden Hintergrund-Threads (Sprachpaket-/OSD-Download,
         Update-Check). Vor dem Schließen der Seite/App aufrufen — Qt darf einen QThread nie
         zerstören, während sein Worker noch läuft (führt zu einem harten Absturz, nicht nur
-        zu einer Warnung, siehe Testsuite-Vorfall in der Git-History dieser Datei).
+        zu einer Warnung, siehe CLAUDE.md).
         """
         for thread in list(self._threads):
             thread.quit()
