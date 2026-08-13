@@ -8,8 +8,15 @@ from pathlib import Path
 
 
 class DocumentType(Enum):
+    """Der Enum-Wert ist zugleich die Dateiendung (siehe `generate_filename`) — PDF ist der
+    einzige Mehrseiten-Typ, die übrigen sind Einzelbild-Formate (siehe `Document.can_add_page`).
+    """
+
     PDF = "pdf"
-    IMAGE = "image"
+    JPG = "jpg"
+    PNG = "png"
+    TIF = "tif"
+    BMP = "bmp"
 
 
 @dataclass
@@ -54,7 +61,7 @@ class Document:
         return not self.is_empty
 
     def add_page(self, image_path: Path) -> Page:
-        if self.document_type is DocumentType.IMAGE and self.pages:
+        if self.document_type is not DocumentType.PDF and self.pages:
             raise ValueError("Ein Bild-Dokument kann nur eine Seite enthalten.")
         page = Page(image_path=Path(image_path))
         self.pages.append(page)
@@ -99,6 +106,6 @@ def generate_filename(
     """
     when = when or datetime.now()  # noqa: DTZ005 - bewusst lokale Wanduhrzeit für Dateinamen
     stamp = when.strftime("%Y-%m-%d_%H-%M-%S")
-    extension = "pdf" if document_type is DocumentType.PDF else "png"
+    extension = document_type.value
     stem = pattern.format(Datum=stamp, Nummer=f"{sequence:03d}")
     return f"{stem}.{extension}"

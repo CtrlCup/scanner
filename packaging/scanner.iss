@@ -31,6 +31,12 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 SetupIconFile=..\src\scanner_app\resources\icon.ico
 DisableProgramGroupPage=yes
+; RestartApplications ist zwar bereits Inno-Setup-Default, wird hier aber explizit gesetzt
+; und dokumentiert: die App nutzt dies für ihr automatisches Update (windows_updater.py) —
+; ein still gestarteter Installer (/CLOSEAPPLICATIONS /RESTARTAPPLICATIONS) lässt den
+; Windows-Restart-Manager die laufende Scanner.exe erkennen, schließen und danach neu starten.
+CloseApplications=yes
+RestartApplications=yes
 
 [Languages]
 Name: "german"; MessagesFile: "compiler:Languages\German.isl"

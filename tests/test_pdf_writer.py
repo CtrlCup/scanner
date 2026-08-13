@@ -49,10 +49,33 @@ def test_rotation_changes_page_dimensions(tmp_path):
 
 
 def test_save_document_writes_image(tmp_path):
-    doc = Document(document_type=DocumentType.IMAGE)
+    doc = Document(document_type=DocumentType.PNG)
     doc.add_page(_make_image(tmp_path / "a.png"))
     out = save_document(doc, tmp_path / "out.png")
 
     assert out.exists()
     with Image.open(out) as img:
         assert img.size == (40, 20)
+
+
+def test_save_document_writes_each_image_format(tmp_path):
+    for doc_type in (DocumentType.JPG, DocumentType.PNG, DocumentType.TIF, DocumentType.BMP):
+        doc = Document(document_type=doc_type)
+        doc.add_page(_make_image(tmp_path / f"src_{doc_type.value}.png"))
+        out = save_document(doc, tmp_path / f"out.{doc_type.value}")
+        assert out.exists()
+
+
+def test_save_document_flattens_alpha_for_jpg(tmp_path):
+    # JPG (und BMP) unterstützen keinen Alpha-Kanal — ohne das Flatten in write_image würde
+    # Pillow beim Speichern einer RGBA-Quelle mit OSError abbrechen.
+    doc = Document(document_type=DocumentType.JPG)
+    src = tmp_path / "a.png"
+    Image.new("RGBA", (10, 10), (255, 0, 0, 128)).save(src)
+    doc.add_page(src)
+
+    out = save_document(doc, tmp_path / "out.jpg")
+
+    assert out.exists()
+    with Image.open(out) as img:
+        assert img.mode == "RGB"

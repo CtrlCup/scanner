@@ -39,8 +39,13 @@ def write_pdf(document: Document, output_path: Path | str) -> Path:
     return output_path
 
 
+# JPG und BMP unterstützen keinen Alpha-Kanal — Pillow würde beim Speichern einer RGBA-Quelle
+# in diese Formate mit OSError abbrechen, daher vorher auf weißem Hintergrund flach zeichnen.
+_NO_ALPHA_EXTENSIONS = {"jpg", "bmp"}
+
+
 def write_image(document: Document, output_path: Path | str) -> Path:
-    if document.document_type is not DocumentType.IMAGE:
+    if document.document_type is DocumentType.PDF:
         raise ValueError("write_image erwartet ein Dokument vom Typ Bild.")
     if document.is_empty:
         raise ValueError("Dokument enthält keine Seite.")
@@ -51,6 +56,11 @@ def write_image(document: Document, output_path: Path | str) -> Path:
     with Image.open(page.image_path) as image:
         if page.rotation:
             image = image.rotate(-page.rotation, expand=True)
+        extension = output_path.suffix.lstrip(".").lower()
+        if extension in _NO_ALPHA_EXTENSIONS and image.mode in ("RGBA", "LA", "PA"):
+            background = Image.new("RGB", image.size, "white")
+            background.paste(image.convert("RGBA"), mask=image.convert("RGBA").split()[-1])
+            image = background
         image.save(output_path)
     return output_path
 

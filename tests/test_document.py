@@ -21,13 +21,13 @@ def test_add_page_enables_add_page_for_pdf(tmp_path):
 
 
 def test_image_document_never_allows_add_page(tmp_path):
-    doc = Document(document_type=DocumentType.IMAGE)
+    doc = Document(document_type=DocumentType.PNG)
     doc.add_page(tmp_path / "a.png")
     assert not doc.can_add_page
 
 
 def test_image_document_rejects_second_page(tmp_path):
-    doc = Document(document_type=DocumentType.IMAGE)
+    doc = Document(document_type=DocumentType.PNG)
     doc.add_page(tmp_path / "a.png")
     with pytest.raises(ValueError):
         doc.add_page(tmp_path / "b.png")

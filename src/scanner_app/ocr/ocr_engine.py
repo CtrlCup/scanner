@@ -1,9 +1,43 @@
 from __future__ import annotations
 
 import os
+import shutil
+import sys
 from pathlib import Path
 
 from scanner_app.ocr.language_manager import AVAILABLE_LANGUAGES, DEFAULT_LANGUAGES, tessdata_dir
+
+# Ghostscript heißt unter Windows gswin64c/gswin32c statt gs — pro Werkzeug reicht ein
+# Treffer aus den Kandidaten-Binärnamen (siehe missing_dependencies()).
+_REQUIRED_TOOLS: dict[str, tuple[str, ...]] = {
+    "tesseract": ("tesseract",),
+    "qpdf": ("qpdf",),
+    "ghostscript": ("gswin64c", "gswin32c") if sys.platform == "win32" else ("gs",),
+}
+
+_INSTALL_HINTS: dict[str, str] = {
+    "tesseract": "https://github.com/UB-Mannheim/tesseract/wiki bzw. „choco install tesseract“",
+    "qpdf": "https://github.com/qpdf/qpdf/releases bzw. „choco install qpdf“",
+    "ghostscript": "https://www.ghostscript.com/download/gsdnld.html bzw. „choco install ghostscript“",
+}
+
+
+def missing_dependencies() -> list[str]:
+    """Namen der OCR-Systemabhängigkeiten (tesseract/qpdf/ghostscript), die nicht im PATH
+    gefunden wurden — leere Liste, wenn alles vorhanden ist. Günstig genug (nur `shutil.which`-
+    Aufrufe, kein Prozessstart), um sie auch synchron im UI-Thread aufzurufen — z.B. um den
+    OCR-Toggle in den Einstellungen vorab zu sperren (siehe Issue #6), statt den Nutzer erst
+    nach einem gescheiterten Scan mit einer generischen Fehlermeldung zu konfrontieren.
+    """
+    return [name for name, candidates in _REQUIRED_TOOLS.items() if not any(shutil.which(c) for c in candidates)]
+
+
+def dependency_hint(missing: list[str]) -> str:
+    """Formatiert `missing_dependencies()`-Ergebnisse zu einem für Nutzer verständlichen
+    Satz mit konkreten Installationshinweisen pro fehlendem Werkzeug.
+    """
+    details = "; ".join(f"{name} ({_INSTALL_HINTS[name]})" for name in missing)
+    return f"Fehlende OCR-Abhängigkeiten: {details}."
 
 
 class OcrError(Exception):
@@ -25,6 +59,10 @@ def apply_ocr(
     import ocrmypdf
     from ocrmypdf.exceptions import EncryptedPdfError, MissingDependencyError
 
+    missing = missing_dependencies()
+    if missing:
+        raise OcrError(dependency_hint(missing))
+
     languages = languages or list(DEFAULT_LANGUAGES)
     codes = [AVAILABLE_LANGUAGES[name] for name in languages]
 
@@ -43,6 +81,8 @@ def apply_ocr(
             tesseract_oem=1 if handwriting else None,
         )
     except MissingDependencyError as exc:
+        # Sollte dank der Vorab-Prüfung oben kaum noch auftreten (z.B. bei kaputter statt
+        # fehlender Installation) — bleibt als zweites Sicherheitsnetz mit generischerer Meldung.
         raise OcrError(
             "OCR-Engine (tesseract/qpdf/ghostscript) nicht gefunden oder unvollständig "
             "installiert."

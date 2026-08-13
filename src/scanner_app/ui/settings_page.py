@@ -24,6 +24,7 @@ from scanner_app.ocr.language_manager import (
     download_language,
     is_language_installed,
 )
+from scanner_app.ocr.ocr_engine import dependency_hint, missing_dependencies
 from scanner_app.ocr.orientation import ensure_osd_installed
 from scanner_app.ui import icons
 from scanner_app.ui.widgets.segmented_control import SegmentedControl
@@ -32,6 +33,8 @@ from scanner_app.update_checker import UpdateInfo, check_for_update
 
 _THEME_LABELS = {"Hell": "light", "Dunkel": "dark", "Automatisch": "system"}
 _THEME_LABELS_REVERSE = {v: k for k, v in _THEME_LABELS.items()}
+_SCAN_MODE_LABELS = {"An Dokument anhängen": "append", "Neues Dokument": "new"}
+_SCAN_MODE_LABELS_REVERSE = {v: k for k, v in _SCAN_MODE_LABELS.items()}
 _GITHUB_URL = "https://github.com/CtrlCup/scanner"
 
 
@@ -162,6 +165,16 @@ class SettingsPage(QWidget):
         self._theme_control.currentChanged.connect(self._on_theme_changed)
         layout.addWidget(self._theme_control)
 
+        scan_mode_label = QLabel("BEIM SCANNEN STANDARDMÄSSIG")
+        scan_mode_label.setProperty("role", "sectionLabel")
+        layout.addWidget(scan_mode_label)
+        self._scan_mode_control = SegmentedControl(list(_SCAN_MODE_LABELS.keys()))
+        self._scan_mode_control.set_current(
+            _SCAN_MODE_LABELS_REVERSE.get(settings.scan_default_mode, "An Dokument anhängen")
+        )
+        self._scan_mode_control.currentChanged.connect(self._on_scan_mode_changed)
+        layout.addWidget(self._scan_mode_control)
+
         accent_label = QLabel("AKZENTFARBE")
         accent_label.setProperty("role", "sectionLabel")
         layout.addWidget(accent_label)
@@ -226,10 +239,18 @@ class SettingsPage(QWidget):
         )
         self._auto_rotate_toggle.toggled.connect(self._on_auto_rotate_toggled)
 
+        layout.addWidget(_divider())
+
         self._ocr_toggle = self._add_toggle_row(
             layout, "OCR (Texterkennung) aktivieren", settings.ocr_enabled
         )
         self._ocr_toggle.toggled.connect(self._on_ocr_toggled)
+
+        self._ocr_dependency_hint = QLabel()
+        self._ocr_dependency_hint.setProperty("role", "hint")
+        self._ocr_dependency_hint.setWordWrap(True)
+        layout.addWidget(self._ocr_dependency_hint)
+        self._refresh_ocr_dependency_state()
 
         self._language_section = QWidget()
         language_layout = QVBoxLayout(self._language_section)
@@ -269,7 +290,7 @@ class SettingsPage(QWidget):
 
         # -- Updates ------------------------------------------------------------------------
         auto_update_row = QHBoxLayout()
-        auto_update_label = QLabel("Automatisch nach Updates suchen")
+        auto_update_label = QLabel("Automatische Updates")
         auto_update_label.setProperty("role", "sectionLabel")
         auto_update_row.addWidget(auto_update_label)
         auto_update_row.addStretch()
@@ -376,6 +397,21 @@ class SettingsPage(QWidget):
         installed = is_language_installed(name)
         chip.setText(name if installed else f"{name}  ↓")
 
+    def _refresh_ocr_dependency_state(self) -> None:
+        """Sperrt den OCR-Toggle, wenn tesseract/qpdf/ghostscript nicht im PATH gefunden
+        werden (Issue #6) — verhindert, dass der Nutzer OCR erst nach einem gescheiterten
+        Scan über eine generische Fehlermeldung als kaputt erlebt.
+        """
+        missing = missing_dependencies()
+        if missing:
+            self._ocr_toggle.setEnabled(False)
+            self._ocr_toggle.setChecked(False)
+            self._ocr_dependency_hint.setText(dependency_hint(missing))
+            self._ocr_dependency_hint.setVisible(True)
+        else:
+            self._ocr_toggle.setEnabled(True)
+            self._ocr_dependency_hint.setVisible(False)
+
     def _on_ocr_toggled(self, checked: bool) -> None:
         self._settings.ocr_enabled = checked
         self._language_section.setVisible(checked)
@@ -440,6 +476,9 @@ class SettingsPage(QWidget):
         theme = _THEME_LABELS[label]
         self._settings.theme = theme
         self.themeChanged.emit(theme)
+
+    def _on_scan_mode_changed(self, label: str) -> None:
+        self._settings.scan_default_mode = _SCAN_MODE_LABELS[label]
 
     def _refresh_accent_swatches(self) -> None:
         current = self._settings.accent_color

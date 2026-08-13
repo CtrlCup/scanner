@@ -182,6 +182,7 @@ def build_stylesheet(mode: str, accent: str) -> str:
         background: transparent;
     }}
     QLabel[role="hint"] {{ color: {p['text_hint']}; background: transparent; font-size: 12px; }}
+    #resolutionHint {{ color: {p['text_hint']}; background: transparent; font-size: 11px; margin-top: -2px; }}
     QLabel[role="sliderValue"] {{ color: {p['text_label']}; background: transparent; }}
 
     QComboBox, QLineEdit {{
@@ -241,6 +242,7 @@ def build_stylesheet(mode: str, accent: str) -> str:
     }}
     QPushButton[role="primaryLeft"] {{ border-radius: 6px 0 0 6px; }}
     QPushButton[role="primaryRight"] {{ border-radius: 0 6px 6px 0; }}
+    #scanActiveRow {{ background-color: {accent}; border-radius: 6px; padding: 9px 12px; }}
 
     QPushButton[role="icon"] {{
         background-color: transparent;
@@ -259,6 +261,20 @@ def build_stylesheet(mode: str, accent: str) -> str:
         padding: 8px 12px;
     }}
 
+    QMenu#scanMenu {{
+        background-color: {p['popover_bg']};
+        border: 1px solid {p['popover_border']};
+        border-radius: 8px;
+        padding: 4px;
+        color: {p['text_primary']};
+    }}
+    QMenu#scanMenu::item {{
+        padding: 9px 10px;
+        border-radius: 5px;
+        font-size: 13px;
+    }}
+    QMenu#scanMenu::item:selected {{ background-color: {menu_selected}; }}
+
     #segmentedControl {{
         background-color: {p['segmented_bg']};
         border: none;
@@ -268,8 +284,8 @@ def build_stylesheet(mode: str, accent: str) -> str:
         background-color: transparent;
         border: none;
         border-radius: 5px;
-        padding: 7px 4px;
-        font-size: 13px;
+        padding: 7px 2px;
+        font-size: 12px;
         color: {p['segment_unselected_text']};
     }}
     #segmentButton:checked {{

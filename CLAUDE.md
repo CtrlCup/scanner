@@ -73,7 +73,12 @@ Windows aus.
 Diese Session läuft in WSL2 (Linux). Der Windows-WIA-Backend-Code (`backend/windows_wia.py`) kann
 hier **nicht** getestet werden — nur auf Syntax-/Importebene verifizierbar, nicht funktional. Echte
 Scanner-Hardware ist hier ebenfalls nicht angeschlossen; SANE-Backend wird gegen `python-sane`
-entwickelt, aber ohne physisches Gerät nur bis zur Geräteerkennung testbar.
+entwickelt, aber ohne physisches Gerät nur bis zur Geräteerkennung testbar. Gleiches gilt für
+`windows_updater.py`: `is_installed_windows_build()` liefert hier immer `False` (kein `win32`),
+und der eigentliche stille Installer-Start (`/VERYSILENT ...`) lässt sich nur auf echtem Windows
+end-to-end verifizieren — Download/Prüfsummen-Logik ist dagegen reines, plattformunabhängiges
+Python und wird in `tests/test_windows_updater.py` reell getestet (nur `subprocess.Popen` bzw.
+`urllib.request.urlopen` gemockt).
 
 **⚠️ Echtes `sane.get_devices()` in diesem Sandbox-Setup kann abstürzen:** Das installierte
 `libsane-epson2`-Backend crasht (nativer Segfault, in Python nicht abfangbar) bei wiederholten
@@ -155,6 +160,12 @@ Windows bekommt zusätzlich einen echten Installer über `packaging/scanner.iss`
 Deinstallation über die Windows-Einstellungen. Die portable `Scanner.exe` bleibt zusätzlich
 als Download bestehen, für alle, die nichts installieren wollen.
 
+Beide Windows-Dateien bekommen zusätzlich eine `.sha256`-Sidecar-Datei (`sha256sum`-Format)
+mit an das Release angehängt — die des Installers wird vom automatischen Update
+(`windows_updater.py`) zur Verifikation vor der stillen Ausführung benötigt; ohne dieses Asset
+in einem Release bietet der Update-Dialog dort keine automatische Installation an, nur den
+Hinweis-Dialog.
+
 `packaging/icon.png`/`icon.ico` sind ein generischer Platzhalter (kein echtes Markenlogo) —
 bei Bedarf ersetzen.
 
@@ -169,28 +180,59 @@ bei Bedarf ersetzen.
   (`base.py`: `ScannerBackend` ABC, `ScannerDevice`, `ScanOptions`); `linux_sane.py` und
   `windows_wia.py` sind austauschbare Implementierungen, `factory.py` wählt per Plattform aus.
   Die UI-Schicht kennt nur die Abstraktion, nie die Plattformdetails.
-- `src/scanner_app/ocr/` — OCR-Pipeline (`ocrmypdf`-Wrapper, Sprachpaket-Verwaltung)
-- `src/scanner_app/pdf/` — PDF-Erstellung/-Aktualisierung aus `Document`, inkl. Löschen/
+- `src/scanner_app/ocr/` — OCR-Pipeline (`ocrmypdf`-Wrapper, Sprachpaket-Verwaltung,
+  `ocr_engine.missing_dependencies()`/`dependency_hint()` für die Abhängigkeitsprüfung)
+- `src/scanner_app/pdf/` — PDF-/Bild-Erstellung/-Aktualisierung aus `Document`, inkl. Löschen/
   Neuordnen/Rotieren bestehender Seiten
+- `src/scanner_app/update_checker.py` — GitHub-Releases-Abfrage, liefert bei den
+  Windows-Installer-Assets zusätzlich deren Download- und `.sha256`-URLs (siehe
+  `windows_updater.py`)
+- `src/scanner_app/windows_updater.py` — Download+Prüfsummen-Verifikation+stiller Start des
+  Windows-Installers für das automatische Update (siehe Funktionslogik unten); reine Windows-
+  Funktionalität, aber ohne `win32`-Import auf Modulebene plattformübergreifend importierbar/
+  testbar (`is_installed_windows_build()` liefert auf anderen Plattformen einfach `False`)
 - `src/scanner_app/ui/` — UI-Code (Hauptfenster, Einstellungspanel, Vorschau/Thumbnail-Strip,
-  Einstellungsseite, Theme/QSS)
+  Einstellungsseite, Theme/QSS, `icons.py` für die SVG-Icons aus dem Design-Mockup)
 - `tests/` — pytest-Tests
 
 ## Funktionslogik (aus Anforderung, nicht aus Code ableitbar)
 
-- **Neue Seite scannen** (Dateityp PDF): erzeugt bei leerem aktuellem Dokument ein neues PDF;
-  bei vorhandenem Dokument wird per separatem **„+" (Seite hinzufügen)**-Button eine Seite an das
-  aktuelle Dokument angehängt — „Neue Seite scannen" startet in dem Fall stattdessen ein
-  **komplett neues** Dokument (fragt ggf. nach, da vorherige Seiten sonst verworfen werden).
-- **„+" (Seite hinzufügen) ist ausgegraut**, wenn Dateityp = Bild ist (Bilder sind immer
-  Einzelseiten, kein Mehrseiten-Konzept).
-- Nach **jedem** Scan wird die PDF-Datei sofort im eingestellten Speicherpfad geschrieben/
-  aktualisiert (nicht erst bei explizitem „Speichern").
+- **Scannen** (`SettingsPanel`-Fußzeile bzw. Rail-Icon bzw. Strg+Eingabe): Verhalten hängt von
+  der Einstellung **„Beim Scannen standardmäßig"** (`AppSettings.scan_default_mode`,
+  `"append"`/`"new"`) ab — bei `"append"` wird an das aktuelle PDF-Dokument angehängt (sofern
+  Dateityp weiterhin PDF ist und das aktuelle Dokument noch nicht gespeichert/leer ist), bei
+  `"new"` wird immer neu begonnen. Der Chevron-Button daneben öffnet ein Menü mit den zwei
+  expliziten Aktionen **„Scannen"** (= derselbe modusabhängige Klick, Kurzbefehl Strg+Eingabe)
+  und **„Scannen und neu beginnen"** (verwirft das aktuelle Dokument immer, unabhängig vom
+  Standardmodus, Kurzbefehl Strg+N). Einzelbild-Dateitypen (JPG/PNG/TIF/BMP) beginnen wegen
+  `Document.can_add_page` (nur PDF erlaubt Mehrseiten) so oder so bei jedem Scan neu. Siehe
+  `MainWindow._perform_scan()`.
+- **Dateityp**: PDF (mehrseitig) oder JPG/PNG/TIF/BMP (Einzelbild, `DocumentType`-Enum-Wert =
+  Dateiendung). Bei JPG/BMP wird eine RGBA-Quelle vor dem Speichern auf weißem Hintergrund
+  flachgezeichnet (`pdf_writer.write_image`), da diese Formate keinen Alpha-Kanal unterstützen.
+- **Scan läuft im Hintergrund-Thread** (`MainWindow._ScanWorker`, nie im UI-Thread — sonst
+  friert das Fenster während des oft mehrere Sekunden blockierenden SANE/WIA-Aufrufs ein).
+  Während ein Scan läuft, ist das gesamte Einstellungspanel gesperrt
+  (`SettingsPanel.set_scanning()`), die Scan-Zeile wird durch Spinner + „Scan läuft…" + einen
+  **Abbrechen**-Button ersetzt. Echte Scanner-Backends lassen sich nicht sauber mitten im Aufruf
+  unterbrechen — „Abbrechen" markiert das kommende Ergebnis nur als zu verwerfen und gibt die
+  UI sofort frei, der Hintergrund-Aufruf läuft bis zu seinem natürlichen Ende weiter durch.
+- Nach **jedem** Scan sowie nach Löschen/Rotieren/Neuordnen wird die Ausgabedatei sofort im
+  eingestellten Speicherpfad geschrieben/aktualisiert (nicht erst bei explizitem „Speichern") —
+  jeweils mit einem Toast („Gespeichert: …", `AppSettings.notify_on_finish`-gesteuert) bestätigt.
 - Seiten-Thumbnail-Leiste: Löschen per „×" auf der Kachel, Neuanordnen per Drag & Drop,
   Rotieren per Button oberhalb der Vorschau (wirkt auf die aktuell fokussierte Seite).
 - OCR wird, falls in den Einstellungen aktiviert, beim PDF-Schreiben automatisch angewendet
   (Sprachen aus den Einstellungen, Standardsprachen Deutsch+Englisch vorinstalliert, weitere
   Sprachen werden bei Auswahl im Hintergrund nachgeladen).
+- **OCR-Abhängigkeitsprüfung** (`ocr_engine.missing_dependencies()`, Issue #6): prüft per
+  `shutil.which()`, ob `tesseract`, `qpdf` und Ghostscript (`gs` unter Linux/macOS,
+  `gswin64c`/`gswin32c` unter Windows) im PATH gefunden werden. Fehlt eines davon, ist der
+  OCR-Toggle in den Einstellungen von vornherein deaktiviert (mit Hinweistext + Installations-
+  Links pro fehlendem Tool, `SettingsPage._refresh_ocr_dependency_state()`) — statt den Fehler
+  erst nach einem gescheiterten Scan über die generische `MissingDependencyError`-Meldung von
+  `ocrmypdf` zu zeigen. `apply_ocr()` prüft zusätzlich selbst vorab (zweites Sicherheitsnetz für
+  den Fall, dass ein Tool zwischen App-Start und Scan aus dem PATH verschwindet).
 - **Automatisches Drehen** (eigener Einstellungen-Toggle, unabhängig von OCR): nach jedem Scan
   wird die Ausrichtung der Seite per Tesseract-OSD (`scanner_app/ocr/orientation.py`) erkannt
   und die Seite automatisch in die erkannte Richtung gedreht — best effort, bei fehlender
@@ -201,13 +243,28 @@ bei Bedarf ersetzen.
   primär für Druckschrift trainiert, auch mit diesem Modus ist echte Handschrift nur begrenzt
   zuverlässig erkennbar.
 - **Update-Check** (`scanner_app/update_checker.py`): fragt die GitHub-Releases-API ab und
-  vergleicht gegen `scanner_app.__version__`. MVP-Scope bewusst begrenzt (siehe Issue #2):
-  informiert nur (Dialog + Link zur Release-Seite), lädt/installiert nichts automatisch — kein
-  Checksummen-/Signatur-Check, kein stiller Ersatz der laufenden Datei. Läuft immer in einem
-  Hintergrund-Thread, schlägt bei fehlendem Internet still fehl (gibt `None` zurück statt zu
-  werfen). Automatischer Start-Check ~1,5s nach Fensteröffnung, abschaltbar über
-  `auto_update_check_enabled`; die Prüfung dieser Einstellung erfolgt bewusst erst beim
-  Timer-Feuern, nicht beim Scheduling (relevant für Tests, die sie direkt danach ändern).
+  vergleicht gegen `scanner_app.__version__`. Läuft immer in einem Hintergrund-Thread, schlägt
+  bei fehlendem Internet still fehl (gibt `None` zurück statt zu werfen). Automatischer
+  Start-Check ~1,5s nach Fensteröffnung, abschaltbar über `auto_update_check_enabled`; die
+  Prüfung dieser Einstellung erfolgt bewusst erst beim Timer-Feuern, nicht beim Scheduling
+  (relevant für Tests, die sie direkt danach ändern).
+- **Automatische Installation (nur Windows-Installer-Build)**: über das ursprüngliche MVP
+  (Issue #2, nur Hinweis+Link) hinaus erweitert — `update_checker.check_for_update()` liest bei
+  gefundenem neueren Release zusätzlich die Download-URLs des Windows-Setup-Assets und seiner
+  vom Release-Workflow mitveröffentlichten `.sha256`-Sidecar-Datei (`package.yml`) aus den
+  GitHub-Release-Assets. Der Update-Dialog (`MainWindow._on_update_available`) bietet einen
+  „Jetzt installieren"-Button **nur** an, wenn `windows_updater.is_installed_windows_build()`
+  zutrifft (erkannt am `unins000.exe`-Uninstaller neben der laufenden `sys.executable` — nie
+  für die portable `.exe` oder einen Start aus dem Quellcode) UND beide URLs vorhanden sind.
+  Ablauf bei Klick (`MainWindow._start_auto_update`, Hintergrund-Thread
+  `_UpdateInstallWorker`): Prüfsumme laden → Installer laden (mit Fortschritts-Dialog +
+  Abbrechen) → SHA-256 gegen die Prüfsumme verifizieren (Pflicht — ein automatisch gestarteter
+  Installer darf nie eine unverifizierte Datei ausführen, siehe `windows_updater.py`) → still
+  installieren (`/VERYSILENT /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS`, nutzt Inno Setups
+  Windows-Restart-Manager-Integration aus `scanner.iss`) → App beendet sich selbst geordnet
+  (`self.close()`), der Installer startet die neue Version danach automatisch neu. Für
+  Linux/portable-Windows/Dev-Läufe bleibt es beim reinen Hinweis-Dialog mit Link zur
+  Release-Seite.
 - Einstellungen sind eine **eingebettete Seite** (`SettingsPage`, `QStackedWidget` in
   `main_window.py`), kein separates Fenster/Dialog — Navigation über das Zahnrad in der
   `IconRail` (hin, siehe `window_chrome.py`) und den Zurück-Pfeil im Seitenkopf (zurück). Der

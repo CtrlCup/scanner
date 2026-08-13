@@ -91,6 +91,18 @@ class AppSettings:
         self._settings.setValue("auto_update_check_enabled", value)
 
     @property
+    def scan_default_mode(self) -> str:
+        """'append' (an aktuelles PDF-Dokument anhängen) oder 'new' (immer neues Dokument
+        beginnen) — bestimmt das Verhalten eines einfachen Klicks auf 'Scannen'.
+        'Scannen und neu beginnen' im Scan-Menü startet unabhängig davon immer neu.
+        """
+        return self._settings.value("scan_default_mode", "append", type=str)
+
+    @scan_default_mode.setter
+    def scan_default_mode(self, value: str) -> None:
+        self._settings.setValue("scan_default_mode", value)
+
+    @property
     def default_filename_pattern(self) -> str:
         return self._settings.value("default_filename_pattern", DEFAULT_FILENAME_PATTERN, type=str)
 

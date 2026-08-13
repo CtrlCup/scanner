@@ -38,12 +38,23 @@ jobs:
         run: |
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
             "/DMyAppVersion=${{ steps.version.outputs.version }}" packaging\scanner.iss
+      - name: SHA-256-Prüfsummen erzeugen
+        # Wird vom automatischen Windows-Update (windows_updater.py) genutzt, um den
+        # heruntergeladenen Installer vor der stillen Ausführung zu verifizieren — ohne
+        # diese Sidecar-Dateien bliebe Auto-Update auf reines "Hinweis + Link" beschränkt.
+        shell: bash
+        run: |
+          cd dist
+          sha256sum "${{ steps.version.outputs.exe_name }}" > "${{ steps.version.outputs.exe_name }}.sha256"
+          sha256sum "installer/${{ steps.version.outputs.setup_name }}" > "installer/${{ steps.version.outputs.setup_name }}.sha256"
       - uses: actions/upload-artifact@v4
         with:
           name: scanner-windows-exe
           path: |
             dist/${{ steps.version.outputs.exe_name }}
+            dist/${{ steps.version.outputs.exe_name }}.sha256
             dist/installer/${{ steps.version.outputs.setup_name }}
+            dist/installer/${{ steps.version.outputs.setup_name }}.sha256
       - name: An Release anhängen
         if: ${{ github.event.inputs.tag != '' }}
         shell: bash
@@ -52,7 +63,9 @@ jobs:
         run: |
           gh release upload "${{ github.event.inputs.tag }}" \
             "dist/installer/${{ steps.version.outputs.setup_name }}#Windows 10/11 (64-bit) – Installer (empfohlen: Startmenü-Eintrag, sauberes Deinstallieren über Windows-Einstellungen)" \
+            "dist/installer/${{ steps.version.outputs.setup_name }}.sha256#SHA-256-Prüfsumme des Installers (für automatische Updates und manuelle Verifikation)" \
             "dist/${{ steps.version.outputs.exe_name }}#Windows 10/11 (64-bit) – portable, ohne Installation direkt startbar" \
+            "dist/${{ steps.version.outputs.exe_name }}.sha256#SHA-256-Prüfsumme der portablen .exe" \
             --clobber --repo "${{ github.repository }}"
 
   linux:

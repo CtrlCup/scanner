@@ -4,21 +4,24 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QPoint, Qt, QTimer, QUrl
-from PySide6.QtGui import QColor, QDesktopServices, QIcon
+from PySide6.QtCore import QEvent, QObject, QPoint, Qt, QThread, QTimer, QUrl, Signal
+from PySide6.QtGui import QColor, QDesktopServices, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QGraphicsDropShadowEffect,
     QHBoxLayout,
     QMainWindow,
     QMessageBox,
+    QProgressDialog,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
+from scanner_app import windows_updater
 from scanner_app.app_settings import DEFAULT_FILENAME_PATTERN, AppSettings
 from scanner_app.backend import ScannerBackendError, get_backend
+from scanner_app.backend.base import ScannerDevice, ScanOptions
 from scanner_app.models.document import Document, DocumentType, generate_filename
 from scanner_app.ocr.ocr_engine import OcrError
 from scanner_app.ocr.orientation import detect_rotation
@@ -36,6 +39,68 @@ _PAGE_SETTINGS = 1
 
 _SHADOW_MARGIN = 24
 _RESIZE_MARGIN = 6
+
+
+class _ScanWorker(QObject):
+    """Führt `ScannerBackend.scan_page()` in einem Hintergrund-Thread aus — dieser Aufruf
+    blockiert je nach Backend (SANE/WIA) mehrere Sekunden, darf daher nie im UI-Thread
+    laufen, sonst friert das ganze Fenster während des Scans ein (siehe Issue #7).
+    """
+
+    finished = Signal(Path)
+    failed = Signal(str)
+
+    def __init__(self, backend, device: ScannerDevice, options: ScanOptions, target: Path) -> None:
+        super().__init__()
+        self._backend = backend
+        self._device = device
+        self._options = options
+        self._target = target
+
+    def run(self) -> None:
+        try:
+            self._backend.scan_page(self._device, self._options, self._target)
+        except ScannerBackendError as exc:
+            self.failed.emit(str(exc))
+            return
+        self.finished.emit(self._target)
+
+
+class _UpdateInstallWorker(QObject):
+    """Lädt den geprüften Windows-Installer eines neueren Releases im Hintergrund herunter
+    (siehe windows_updater.py) — Prüfsummen-Abruf und Download in einem Rutsch, damit für
+    einen Update-Vorgang nur ein einziger Hintergrund-Thread nötig ist.
+    """
+
+    progress = Signal(int, int)
+    succeeded = Signal(Path)
+    failed = Signal(str)
+
+    def __init__(self, installer_url: str, checksum_url: str) -> None:
+        super().__init__()
+        self._installer_url = installer_url
+        self._checksum_url = checksum_url
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        self._cancelled = True
+
+    def run(self) -> None:
+        try:
+            checksum = windows_updater.fetch_checksum(self._checksum_url)
+            if self._cancelled:
+                self.failed.emit("Abgebrochen.")
+                return
+            path = windows_updater.download_installer(
+                self._installer_url,
+                checksum,
+                progress_callback=lambda done, total: self.progress.emit(done, total),
+                cancel_check=lambda: self._cancelled,
+            )
+        except windows_updater.UpdateInstallError as exc:
+            self.failed.emit(str(exc))
+            return
+        self.succeeded.emit(path)
 
 
 class _ResizableRoot(QWidget):
@@ -119,6 +184,12 @@ class MainWindow(QMainWindow):
         self.backend = get_backend()
         self.document = Document(document_type=DocumentType.PDF)
         self._scan_tmp_dir = Path(tempfile.mkdtemp(prefix="scanner-app-"))
+        self._scan_thread: QThread | None = None
+        self._scan_worker: _ScanWorker | None = None
+        self._scan_cancelled = False
+        self._update_thread: QThread | None = None
+        self._update_worker: _UpdateInstallWorker | None = None
+        self._update_progress_dialog: QProgressDialog | None = None
 
         root = _ResizableRoot(self)
         root_layout = QVBoxLayout(root)
@@ -177,9 +248,9 @@ class MainWindow(QMainWindow):
         self._toast = Toast(self._window_frame)
 
         self.settings_panel.scanRequested.connect(self._on_scan_requested)
-        self.settings_panel.addPageRequested.connect(self._on_add_page_requested)
+        self.settings_panel.scanAndRestartRequested.connect(self._on_scan_and_restart_requested)
+        self.settings_panel.cancelScanRequested.connect(self._cancel_scan)
         self.settings_panel.deviceChanged.connect(self._on_device_changed)
-        self.settings_panel.filetypeChanged.connect(lambda _t: self._update_add_page_enabled())
 
         self.preview_panel.deletePageRequested.connect(self._on_delete_page)
         self.preview_panel.pagesReordered.connect(self._on_pages_reordered)
@@ -195,8 +266,11 @@ class MainWindow(QMainWindow):
         self.preview_panel.set_thumbnails_visible(self.settings.show_thumbnails)
         self.preview_panel.set_document(self.document)
         self._apply_theme()
-        self._update_add_page_enabled()
         self._icon_rail.set_save_path(str(self.settings.save_directory))
+
+        QShortcut(QKeySequence("Ctrl+Return"), self, activated=self._on_scan_requested)
+        QShortcut(QKeySequence("Ctrl+Enter"), self, activated=self._on_scan_requested)
+        QShortcut(QKeySequence("Ctrl+N"), self, activated=self._on_scan_and_restart_requested)
 
         # Verzögert, damit der Start-Vorgang der App selbst nicht blockiert/verzögert wird.
         # Die Prüfung von auto_update_check_enabled erfolgt bewusst erst beim Timer-Feuern
@@ -235,17 +309,33 @@ class MainWindow(QMainWindow):
     # -- Scannen -----------------------------------------------------------------
 
     def _on_scan_requested(self) -> None:
-        # "Neue Seite scannen" startet laut Anforderung IMMER ein neues Dokument.
+        """'Scannen': hängt an das aktuelle Dokument an oder beginnt neu, je nach
+        `scan_default_mode`-Einstellung — siehe `_perform_scan`.
+        """
+        self._perform_scan(restart=False)
+
+    def _on_scan_and_restart_requested(self) -> None:
+        """'Scannen und neu beginnen': verwirft das aktuelle Dokument immer, unabhängig von
+        `scan_default_mode`.
+        """
+        self._perform_scan(restart=True)
+
+    def _perform_scan(self, *, restart: bool) -> None:
+        if self._scan_thread is not None:
+            return  # Ein Scan läuft bereits — Doppelklicks/Shortcut-Wiederholung ignorieren.
+
         filetype = self.settings_panel.current_document_type()
-        self.document = Document(document_type=filetype)
-        self._scan_and_append()
+        start_new = (
+            restart
+            or self.document.document_type is not filetype
+            or self.settings.scan_default_mode == "new"
+            or not self.document.can_add_page
+        )
+        if start_new:
+            self.document = Document(document_type=filetype)
+        self._start_scan()
 
-    def _on_add_page_requested(self) -> None:
-        if not self.document.can_add_page:
-            return
-        self._scan_and_append()
-
-    def _scan_and_append(self) -> None:
+    def _start_scan(self) -> None:
         device = self.settings_panel.current_device()
         if device is None:
             QMessageBox.warning(self, "Kein Scanner", "Bitte zuerst einen Scanner auswählen.")
@@ -253,11 +343,32 @@ class MainWindow(QMainWindow):
 
         options = self.settings_panel.current_scan_options()
         target = self._scan_tmp_dir / f"{uuid.uuid4().hex}.png"
-        try:
-            self.backend.scan_page(device, options, target)
-        except ScannerBackendError as exc:
-            QMessageBox.critical(self, "Scan fehlgeschlagen", str(exc))
-            return
+
+        self._scan_cancelled = False
+        self.settings_panel.set_scanning(True)
+
+        thread = QThread(self)
+        worker = _ScanWorker(self.backend, device, options, target)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._on_scan_finished, Qt.ConnectionType.QueuedConnection)
+        worker.failed.connect(self._on_scan_failed, Qt.ConnectionType.QueuedConnection)
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(self._on_scan_thread_finished)
+
+        self._scan_thread = thread
+        self._scan_worker = worker  # Referenz halten, sonst könnte der Worker vorzeitig gc'et werden.
+        thread.start()
+
+    def _on_scan_thread_finished(self) -> None:
+        self._scan_thread = None
+        self._scan_worker = None
+
+    def _on_scan_finished(self, target: Path) -> None:
+        self.settings_panel.set_scanning(False)
+        if self._scan_cancelled:
+            return  # Nutzer hat währenddessen abgebrochen — Ergebnis verwerfen.
 
         page = self.document.add_page(target)
         if self.settings.auto_rotate_enabled:
@@ -266,24 +377,38 @@ class MainWindow(QMainWindow):
                 self.document.rotate_page(page.id, rotation)
         self._save_and_refresh(notify=True)
 
+    def _on_scan_failed(self, message: str) -> None:
+        self.settings_panel.set_scanning(False)
+        if self._scan_cancelled:
+            return
+        QMessageBox.critical(self, "Scan fehlgeschlagen", message)
+
+    def _cancel_scan(self) -> None:
+        """Echte Scanner-Backends (SANE/WIA) lassen sich nicht sauber mitten im laufenden
+        Aufruf unterbrechen — 'Abbrechen' markiert das kommende Ergebnis daher nur als zu
+        verwerfen und gibt die UI sofort wieder frei, statt den Hintergrund-Thread hart zu
+        beenden (das könnte den Scanner-Treiber in einem inkonsistenten Zustand zurücklassen).
+        """
+        self._scan_cancelled = True
+        self.settings_panel.set_scanning(False)
+
     # -- Seiten verwalten ----------------------------------------------------------
 
     def _on_delete_page(self, page_id: str) -> None:
         self.document.remove_page(page_id)
-        self._save_and_refresh()
+        self._save_and_refresh(notify=True)
 
     def _on_pages_reordered(self, ordered_ids: list[str]) -> None:
         by_id = {page.id: page for page in self.document.pages}
         self.document.pages = [by_id[pid] for pid in ordered_ids if pid in by_id]
-        self._save_and_refresh()
+        self._save_and_refresh(notify=True)
 
     def _on_rotate_page(self, page_id: str, degrees: int) -> None:
         self.document.rotate_page(page_id, degrees)
-        self._save_and_refresh()
+        self._save_and_refresh(notify=True)
 
     def _save_and_refresh(self, *, notify: bool = False) -> None:
         self.preview_panel.set_document(self.document)
-        self._update_add_page_enabled()
 
         if self.document.is_empty:
             return
@@ -351,11 +476,6 @@ class MainWindow(QMainWindow):
                 return candidate
             counter += 1
 
-    def _update_add_page_enabled(self) -> None:
-        filetype = self.settings_panel.current_document_type()
-        enabled = filetype is DocumentType.PDF and not self.document.is_empty
-        self.settings_panel.set_can_add_page(enabled)
-
     def _on_device_changed(self) -> None:
         device = self.settings_panel.current_device()
         if device is not None:
@@ -383,17 +503,93 @@ class MainWindow(QMainWindow):
         self._apply_theme()
 
     def _on_update_available(self, info) -> None:
+        # Automatische Installation nur, wenn diese Version über den Windows-Installer
+        # installiert wurde (nicht die portable .exe, nicht ein Start aus dem Quellcode) UND
+        # das Release sowohl einen Installer als auch dessen Prüfsumme als Asset mitbringt
+        # (siehe update_checker.py) — sonst bleibt es beim reinen Hinweis-Dialog.
+        can_auto_install = (
+            windows_updater.is_installed_windows_build()
+            and info.windows_installer_url
+            and info.windows_installer_checksum_url
+        )
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Icon.Information)
         box.setWindowTitle("Update verfügbar")
         box.setText(f"Eine neue Version ist verfügbar: v{info.version}")
         if info.notes:
             box.setInformativeText(info.notes[:500])
-        open_button = box.addButton("Release-Seite öffnen", QMessageBox.ButtonRole.AcceptRole)
+        install_button = None
+        if can_auto_install:
+            install_button = box.addButton("Jetzt installieren", QMessageBox.ButtonRole.AcceptRole)
+        open_button = box.addButton("Release-Seite öffnen", QMessageBox.ButtonRole.ActionRole)
         box.addButton("Später", QMessageBox.ButtonRole.RejectRole)
         box.exec()
-        if box.clickedButton() is open_button:
+        clicked = box.clickedButton()
+        if install_button is not None and clicked is install_button:
+            self._start_auto_update(info)
+        elif clicked is open_button:
             QDesktopServices.openUrl(info.html_url)
+
+    def _start_auto_update(self, info) -> None:
+        progress = QProgressDialog("Update wird heruntergeladen…", "Abbrechen", 0, 100, self)
+        progress.setWindowTitle("Update wird installiert")
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+
+        thread = QThread(self)
+        worker = _UpdateInstallWorker(info.windows_installer_url, info.windows_installer_checksum_url)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.progress.connect(self._on_update_progress, Qt.ConnectionType.QueuedConnection)
+        worker.succeeded.connect(self._on_update_downloaded, Qt.ConnectionType.QueuedConnection)
+        worker.failed.connect(self._on_update_download_failed, Qt.ConnectionType.QueuedConnection)
+        worker.succeeded.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(self._on_update_thread_finished)
+        progress.canceled.connect(worker.cancel)
+
+        self._update_thread = thread
+        self._update_worker = worker
+        self._update_progress_dialog = progress
+        thread.start()
+
+    def _on_update_thread_finished(self) -> None:
+        self._update_thread = None
+        self._update_worker = None
+
+    def _on_update_progress(self, done: int, total: int) -> None:
+        if self._update_progress_dialog is None:
+            return
+        if total:
+            self._update_progress_dialog.setMaximum(total)
+            self._update_progress_dialog.setValue(done)
+        else:
+            self._update_progress_dialog.setMaximum(0)  # unbekannte Größe -> unbestimmter Balken
+
+    def _on_update_downloaded(self, installer_path: Path) -> None:
+        if self._update_progress_dialog is not None:
+            self._update_progress_dialog.close()
+            self._update_progress_dialog = None
+        try:
+            windows_updater.launch_silent_install(installer_path)
+        except windows_updater.UpdateInstallError as exc:
+            QMessageBox.critical(self, "Update fehlgeschlagen", str(exc))
+            return
+        # Der Installer schließt die laufende Scanner.exe selbst über den Windows-Restart-
+        # Manager (siehe packaging/scanner.iss) — die App beendet sich hier trotzdem bereits
+        # selbst geordnet (Backend schließen, Hintergrund-Threads sauber beenden), statt sich
+        # zwangsweise beenden zu lassen.
+        self.close()
+
+    def _on_update_download_failed(self, message: str) -> None:
+        if self._update_progress_dialog is not None:
+            self._update_progress_dialog.close()
+            self._update_progress_dialog = None
+        if "abgebrochen" not in message.lower():
+            QMessageBox.warning(self, "Update fehlgeschlagen", message)
 
     def _apply_theme(self) -> None:
         # Auf QApplication-Ebene gesetzt (nicht nur auf diesem Fenster), damit auch
@@ -412,6 +608,15 @@ class MainWindow(QMainWindow):
         self._icon_rail.apply_colors(accent, palette["rail_icon"])
 
     def closeEvent(self, event) -> None:
+        # Qt darf einen QThread nie zerstören, während sein Worker noch läuft (harter Absturz
+        # statt nur einer Warnung, siehe CLAUDE.md) — bei einem noch laufenden Scan also erst
+        # auf dessen Ende warten, bevor das Fenster (und mit ihm dieser QThread) verschwindet.
+        if self._scan_thread is not None:
+            self._scan_thread.quit()
+            self._scan_thread.wait(5000)
+        if self._update_thread is not None:
+            self._update_thread.quit()
+            self._update_thread.wait(5000)
         self.settings_page.shutdown()
         self.backend.close()
         super().closeEvent(event)

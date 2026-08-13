@@ -3,6 +3,7 @@ löschen -> Dateityp-Wechsel) gegen ein Fake-Scanner-Backend, ohne echte Hardwar
 """
 
 import os
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -14,6 +15,7 @@ from pypdf import PdfReader
 from PySide6.QtWidgets import QApplication
 
 from scanner_app.backend.base import ScannerBackend, ScannerDevice, ScanOptions
+from scanner_app.models.document import DocumentType
 from scanner_app.ui.main_window import MainWindow
 from scanner_app.ui.settings_page import SettingsPage
 
@@ -43,6 +45,21 @@ class _FakeScannerBackend(ScannerBackend):
 @pytest.fixture
 def app():
     return QApplication.instance() or QApplication([])
+
+
+def _wait_for_scan(window, timeout_ms: int = 3000) -> None:
+    """Scannen läuft seit der QThread-Umstellung (Issue #7) im Hintergrund — Tests müssen
+    die Event-Loop pumpen, bis der Worker-Thread sein QueuedConnection-Signal zugestellt hat,
+    statt sich (wie vor der Umstellung) auf einen synchron abgeschlossenen Aufruf zu verlassen.
+    """
+    app = QApplication.instance()
+    elapsed = 0
+    step_ms = 10
+    while window._scan_thread is not None and elapsed < timeout_ms:
+        app.processEvents()
+        time.sleep(step_ms / 1000)
+        elapsed += step_ms
+    assert window._scan_thread is None, "Scan im Hintergrund-Thread nicht rechtzeitig beendet"
 
 
 @pytest.fixture
@@ -78,24 +95,80 @@ def window(app, tmp_path):
     win.close()
 
 
-def test_scan_creates_new_pdf(window):
+def _scan(window) -> None:
     window._on_scan_requested()
+    _wait_for_scan(window)
+
+
+def _scan_and_restart(window) -> None:
+    window._on_scan_and_restart_requested()
+    _wait_for_scan(window)
+
+
+def test_scan_creates_new_pdf(window):
+    _scan(window)
     assert len(window.document.pages) == 1
     assert window.document.output_path.exists()
 
 
-def test_add_page_appends_to_pdf(window):
+def test_scan_shows_and_clears_scanning_state(window):
     window._on_scan_requested()
-    assert window.settings_panel._add_page_button.isEnabled()
-    window._on_add_page_requested()
+    # Direkt nach dem Auslösen (vor dem ersten processEvents()) muss der gesperrte Zustand
+    # bereits sichtbar sein — er wird synchron im UI-Thread gesetzt, bevor der Hintergrund-
+    # Thread überhaupt startet.
+    assert window.settings_panel._scan_stack.currentIndex() == 1
+    assert not window.settings_panel._device_combo.isEnabled()
+    _wait_for_scan(window)
+    assert window.settings_panel._scan_stack.currentIndex() == 0
+    assert window.settings_panel._device_combo.isEnabled()
+
+
+def test_cancel_scan_discards_result(window):
+    window._on_scan_requested()
+    window._cancel_scan()
+    assert window.settings_panel._scan_stack.currentIndex() == 0
+    _wait_for_scan(window)
+    assert window.document.pages == []
+
+
+def test_scan_default_mode_append_adds_to_existing_document(window):
+    window.settings.scan_default_mode = "append"
+    _scan(window)
+    assert len(window.document.pages) == 1
+    _scan(window)
     assert len(window.document.pages) == 2
     reader = PdfReader(str(window.document.output_path))
     assert len(reader.pages) == 2
 
 
+def test_scan_default_mode_new_starts_fresh_document(window):
+    window.settings.scan_default_mode = "new"
+    _scan(window)
+    first_output = window.document.output_path
+    assert len(window.document.pages) == 1
+
+    _scan(window)
+    assert len(window.document.pages) == 1
+    assert window.document.output_path != first_output
+    assert first_output.exists()
+
+
+def test_scan_and_restart_always_starts_fresh_document(window):
+    window.settings.scan_default_mode = "append"
+    _scan(window)
+    first_output = window.document.output_path
+    assert len(window.document.pages) == 1
+
+    _scan_and_restart(window)
+    assert len(window.document.pages) == 1
+    assert window.document.output_path != first_output
+    assert first_output.exists()  # vorheriges Dokument bleibt unangetastet auf der Platte
+
+
 def test_delete_page_updates_pdf(window):
-    window._on_scan_requested()
-    window._on_add_page_requested()
+    window.settings.scan_default_mode = "append"
+    _scan(window)
+    _scan(window)
     out_path = window.document.output_path
     to_delete = window.document.pages[0].id
     window._on_delete_page(to_delete)
@@ -105,46 +178,39 @@ def test_delete_page_updates_pdf(window):
 
 
 def test_reorder_pages(window):
-    window._on_scan_requested()
-    window._on_add_page_requested()
-    window._on_add_page_requested()
+    window.settings.scan_default_mode = "append"
+    _scan(window)
+    _scan(window)
+    _scan(window)
     ids = [p.id for p in window.document.pages]
     window._on_pages_reordered(list(reversed(ids)))
     assert [p.id for p in window.document.pages] == list(reversed(ids))
 
 
 def test_rotate_page(window):
-    window._on_scan_requested()
+    _scan(window)
     page_id = window.document.pages[0].id
     window._on_rotate_page(page_id, 90)
     assert window.document.pages[0].rotation == 90
 
 
-def test_add_page_disabled_for_image_filetype(window):
-    window.settings_panel._filetype_combo.setCurrentText("Bild")
-    window._update_add_page_enabled()
-    assert not window.settings_panel._add_page_button.isEnabled()
+def test_image_filetype_always_starts_fresh_document(window):
+    window.settings.scan_default_mode = "append"
+    window.settings_panel._filetype_combo.setCurrentText("PNG")
 
-    window._on_scan_requested()
+    _scan(window)
     assert window.document.output_path.suffix == ".png"
-    assert not window.settings_panel._add_page_button.isEnabled()
-
-
-def test_new_scan_always_starts_fresh_document(window):
-    window._on_scan_requested()
-    window._on_add_page_requested()
+    assert window.document.document_type is DocumentType.PNG
     first_output = window.document.output_path
-    assert len(window.document.pages) == 2
 
-    window._on_scan_requested()
-    assert len(window.document.pages) == 1
+    _scan(window)
+    assert len(window.document.pages) == 1  # keine zweite Seite angehängt
     assert window.document.output_path != first_output
-    assert first_output.exists()  # vorheriges Dokument bleibt unangetastet auf der Platte
 
 
 def test_auto_rotate_disabled_by_default_leaves_page_unrotated(window):
     with patch("scanner_app.ui.main_window.detect_rotation", return_value=180) as mock_detect:
-        window._on_scan_requested()
+        _scan(window)
     mock_detect.assert_not_called()
     assert window.document.pages[0].rotation == 0
 
@@ -152,15 +218,25 @@ def test_auto_rotate_disabled_by_default_leaves_page_unrotated(window):
 def test_auto_rotate_enabled_applies_detected_rotation(window):
     window.settings.auto_rotate_enabled = True
     with patch("scanner_app.ui.main_window.detect_rotation", return_value=180):
-        window._on_scan_requested()
+        _scan(window)
     assert window.document.pages[0].rotation == 180
 
 
 def test_auto_rotate_skips_page_rotation_when_no_rotation_detected(window):
     window.settings.auto_rotate_enabled = True
     with patch("scanner_app.ui.main_window.detect_rotation", return_value=0):
-        window._on_scan_requested()
+        _scan(window)
     assert window.document.pages[0].rotation == 0
+
+
+def test_ocr_toggle_disabled_when_dependencies_missing(window):
+    with patch("scanner_app.ui.settings_page.missing_dependencies", return_value=["tesseract"]):
+        page = SettingsPage(window.settings)
+    try:
+        assert not page._ocr_toggle.isEnabled()
+        assert "tesseract" in page._ocr_dependency_hint.text()
+    finally:
+        page.close()
 
 
 def test_handwriting_toggle_only_visible_when_ocr_enabled(window):
@@ -263,3 +339,79 @@ def test_main_window_shows_dialog_when_update_available(window):
         mock_box.clickedButton.return_value = None
         window._on_update_available(info)
     mock_box.exec.assert_called_once()
+
+
+def test_update_dialog_has_no_install_button_when_not_windows_installed_build(window):
+    # Läuft unter Linux/CI — is_installed_windows_build() ist dort immer False, der
+    # Dialog darf also nie eine automatische Installationsoption anbieten.
+    from scanner_app.update_checker import UpdateInfo
+
+    info = UpdateInfo(
+        version="9.9.9",
+        html_url="https://example.invalid/x",
+        notes="",
+        windows_installer_url="https://example.invalid/setup.exe",
+        windows_installer_checksum_url="https://example.invalid/setup.exe.sha256",
+    )
+    with patch("scanner_app.ui.main_window.QMessageBox") as mock_box_cls:
+        mock_box = mock_box_cls.return_value
+        mock_box.clickedButton.return_value = None
+        window._on_update_available(info)
+    # Nur zwei Buttons ("Release-Seite öffnen", "Später") — kein "Jetzt installieren".
+    assert mock_box.addButton.call_count == 2
+
+
+def test_auto_update_downloads_and_launches_installer(window):
+    from scanner_app.update_checker import UpdateInfo
+
+    info = UpdateInfo(
+        version="9.9.9",
+        html_url="https://example.invalid/x",
+        notes="",
+        windows_installer_url="https://example.invalid/setup.exe",
+        windows_installer_checksum_url="https://example.invalid/setup.exe.sha256",
+    )
+    fake_installer = window._scan_tmp_dir / "fake-setup.exe"
+    fake_installer.write_bytes(b"x")
+
+    with (
+        patch("scanner_app.ui.main_window.windows_updater.fetch_checksum", return_value="abc"),
+        patch("scanner_app.ui.main_window.windows_updater.download_installer", return_value=fake_installer),
+        patch("scanner_app.ui.main_window.windows_updater.launch_silent_install") as mock_launch,
+    ):
+        window._start_auto_update(info)
+        app = QApplication.instance()
+        elapsed = 0
+        while window._update_thread is not None and elapsed < 3000:
+            app.processEvents()
+            time.sleep(0.01)
+            elapsed += 10
+
+    mock_launch.assert_called_once_with(fake_installer)
+
+
+def test_auto_update_shows_warning_on_failure(window):
+    from scanner_app.update_checker import UpdateInfo
+
+    info = UpdateInfo(
+        version="9.9.9",
+        html_url="https://example.invalid/x",
+        notes="",
+        windows_installer_url="https://example.invalid/setup.exe",
+        windows_installer_checksum_url="https://example.invalid/setup.exe.sha256",
+    )
+    from scanner_app.windows_updater import UpdateInstallError
+
+    with (
+        patch("scanner_app.ui.main_window.windows_updater.fetch_checksum", side_effect=UpdateInstallError("kaputt")),
+        patch("scanner_app.ui.main_window.QMessageBox") as mock_box_cls,
+    ):
+        window._start_auto_update(info)
+        app = QApplication.instance()
+        elapsed = 0
+        while window._update_thread is not None and elapsed < 3000:
+            app.processEvents()
+            time.sleep(0.01)
+            elapsed += 10
+
+    mock_box_cls.warning.assert_called_once()
