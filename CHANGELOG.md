@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.9.0 (2026-08-13)
+
+### Features
+
+- Multi-format export, redesigned scan flow, automatic Windows updates
+  ([`7e6934c`](https://github.com/CtrlCup/scanner/commit/7e6934ca76da8ae5f62d12684de47a8de2583c84))
+
+
 ## v0.8.0 (2026-08-13)
 
 ### Features
