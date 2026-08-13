@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.10.0 (2026-08-13)
+
+### Features
+
+- Bundle tesseract/qpdf/ghostscript so OCR works with zero setup
+  ([`b435732`](https://github.com/CtrlCup/scanner/commit/b4357329e23f09286f09fab9a7859bde5d4d787f))
+
+
 ## v0.9.1 (2026-08-13)
 
 ### Bug Fixes
