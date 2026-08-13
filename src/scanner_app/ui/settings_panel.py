@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from PySide6.QtCore import QPoint, Qt, Signal
 from PySide6.QtWidgets import (
-    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -28,6 +27,7 @@ from scanner_app.ui import icons
 from scanner_app.ui.widgets.segmented_control import SegmentedControl
 from scanner_app.ui.widgets.spinner import Spinner
 from scanner_app.ui.widgets.toggle_switch import ToggleSwitch
+from scanner_app.ui.widgets.wide_combo_box import WideComboBox
 
 _RESOLUTIONS = [75, 150, 300, 600, 1200]
 _DEFAULT_RESOLUTION = 300
@@ -86,7 +86,7 @@ class SettingsPanel(QWidget):
         doc_type_label = _section_label("DATEITYP")
         doc_type_row.addWidget(doc_type_label)
         doc_type_row.addStretch()
-        self._filetype_combo = QComboBox()
+        self._filetype_combo = WideComboBox()
         self._filetype_combo.setFixedWidth(160)
         self._filetype_combo.addItems(list(_FILETYPE_LABELS.keys()))
         self._filetype_combo.setCurrentText("PDF")
@@ -99,7 +99,7 @@ class SettingsPanel(QWidget):
         layout.addWidget(self._color_control)
 
         layout.addWidget(_section_label("AUFLÖSUNG"))
-        self._resolution_combo = QComboBox()
+        self._resolution_combo = WideComboBox()
         self._resolution_combo.addItems([f"{dpi} DPI" for dpi in _RESOLUTIONS])
         self._resolution_combo.setCurrentIndex(_RESOLUTIONS.index(_DEFAULT_RESOLUTION))
         self._resolution_combo.currentIndexChanged.connect(self._update_resolution_hint)
@@ -247,7 +247,7 @@ class SettingsPanel(QWidget):
         caption.setObjectName("scannerLabel")
         text_col.addWidget(caption)
 
-        self._device_combo = QComboBox()
+        self._device_combo = WideComboBox()
         self._device_combo.setObjectName("scannerCombo")
         self._device_combo.currentIndexChanged.connect(lambda _i: self.deviceChanged.emit())
         text_col.addWidget(self._device_combo)

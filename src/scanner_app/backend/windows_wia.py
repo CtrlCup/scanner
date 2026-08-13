@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -40,15 +41,30 @@ _FORMAT_ID_PNG = "{B96B3CAF-0728-11D3-9D7B-0000F81EF32E}"
 
 
 class WiaScannerBackend(ScannerBackend):
+    """WIA/COM-Objekte sind apartment-gebunden (STA) — ein `WIA.DeviceManager`, der im
+    UI-Thread erzeugt wurde (z.B. beim Befüllen der Geräteliste), darf nicht direkt aus dem
+    Scan-Hintergrund-Thread (siehe `MainWindow._ScanWorker`) weiterverwendet werden. Ohne
+    korrekte Marshalling-Vorkehrung kann ein solcher Cross-Thread-COM-Zugriff je nach
+    Windows-Version/Treiber entweder sofort einen Fehler werfen oder — schlimmer — den
+    aufrufenden Thread unbegrenzt blockieren, ohne dass eine Exception fällt (ein einfacher
+    try/except in `_ScanWorker.run()` würde das also nicht auffangen). `self._local`
+    (threading.local) sorgt dafür, dass jeder Thread sein eigenes, in diesem Thread per
+    `CoInitialize()` initialisiertes DeviceManager-COM-Objekt bekommt.
+    """
+
     def __init__(self) -> None:
-        self._device_manager = None
+        self._local = threading.local()
 
     def _manager(self) -> Any:
-        if self._device_manager is None:
+        manager = getattr(self._local, "device_manager", None)
+        if manager is None:
+            import pythoncom
             import win32com.client
 
-            self._device_manager = win32com.client.Dispatch("WIA.DeviceManager")
-        return self._device_manager
+            pythoncom.CoInitialize()
+            manager = win32com.client.Dispatch("WIA.DeviceManager")
+            self._local.device_manager = manager
+        return manager
 
     def list_devices(self) -> list[ScannerDevice]:
         manager = self._manager()
@@ -116,4 +132,7 @@ class WiaScannerBackend(ScannerBackend):
             try_set(_PROP_DOCUMENT_HANDLING_SELECT, _DOCUMENT_HANDLING_FLATBED)
 
     def close(self) -> None:
-        self._device_manager = None
+        # Räumt nur das COM-Objekt des aufrufenden (UI-)Threads auf — ein evtl. noch
+        # laufender Scan-Hintergrund-Thread hat sein eigenes und wird beim Thread-Ende von
+        # Windows selbst aufgeräumt.
+        self._local.device_manager = None

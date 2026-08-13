@@ -17,6 +17,10 @@ class Spinner(QWidget):
 
     def __init__(self, parent: QWidget | None = None, size: int = 14, color: str = "#ffffff") -> None:
         super().__init__(parent)
+        # Ohne objectName greift die globale `QWidget { background-color: ... }`-Regel aus
+        # theme.py (analog zum früheren QLabel-Hintergrundbug) — sichtbar als eckiger Fleck
+        # in der Fensterfarbe hinter dem gezeichneten Kreis, siehe #scanSpinner in theme.py.
+        self.setObjectName("scanSpinner")
         self.setFixedSize(size, size)
         self._angle = 0
         self._color = QColor(color)

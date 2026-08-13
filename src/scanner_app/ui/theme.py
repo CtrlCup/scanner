@@ -120,6 +120,7 @@ def build_stylesheet(mode: str, accent: str) -> str:
     QMainWindow {{ background-color: transparent; }}
     #outerRoot {{ background-color: transparent; }}
     QLabel {{ background: transparent; }}
+    #scanSpinner {{ background: transparent; }}
     QToolTip {{
         background-color: {p['popover_bg']};
         color: {p['text_primary']};

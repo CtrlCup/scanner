@@ -66,9 +66,9 @@ class PreviewPanel(QWidget):
             button.setEnabled(False)
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             top_row.addWidget(button)
+        top_row.addStretch()
         self._counter_label = QLabel()
         self._counter_label.setObjectName("previewCounter")
-        top_row.addSpacing(12)
         top_row.addWidget(self._counter_label)
         layout.addWidget(top_bar)
 

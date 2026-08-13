@@ -69,7 +69,15 @@ class _UpdateCheckWorker(QObject):
         self._current_version = current_version
 
     def run(self) -> None:
-        self.finished.emit(check_for_update(self._current_version))
+        # Läuft komplett gekapselt, auch wenn check_for_update() selbst schon nie werfen
+        # sollte: ein unerwarteter Fehler HIER (z.B. beim Parsen einer kaputten API-Antwort)
+        # darf das finished-Signal nie verhindern — sonst bleibt der QThread für immer aktiv
+        # und der "Suche nach Updates…"-Zustand in der UI hängt dauerhaft fest.
+        try:
+            result = check_for_update(self._current_version)
+        except Exception:  # noqa: BLE001 - jeder Fehler zählt als "kein Update gefunden"
+            result = None
+        self.finished.emit(result)
 
 
 def _section_label(text: str) -> QLabel:
@@ -108,6 +116,13 @@ class SettingsPage(QWidget):
         self.setObjectName("settingsPage")
         self._settings = settings
         self._threads: list[QThread] = []
+        # Hält Worker-Objekte am Leben, solange ihr Thread läuft: ohne diese Referenz ist ein
+        # `worker` nach Verlassen von `_run_in_background()`/`_start_update_check()` nur noch
+        # über die Signal/Slot-Verbindung erreichbar — das reicht in PySide6 NICHT aus, um es
+        # vor Pythons Garbage Collector zu schützen. Symptom war ein für immer hängender
+        # "Suche nach Updates…"-Zustand, weil `worker.finished` nie zugestellt wurde
+        # (bestätigtes Bugfix, nicht nur Verdacht — siehe zugehörige Regressionstests).
+        self._workers: list[QObject] = []
         self._language_chips: dict[str, QPushButton] = {}
         self._pending_update: UpdateInfo | None = None
 
@@ -460,6 +475,8 @@ class SettingsPage(QWidget):
             on_done(success)
             if thread in self._threads:
                 self._threads.remove(thread)
+            if worker in self._workers:
+                self._workers.remove(worker)
 
         # QueuedConnection erzwungen: eine Verbindung zu einer freien Python-Closure (statt
         # einer QObject-gebundenen Methode) lässt Qt die Empfänger-Thread-Zugehörigkeit nicht
@@ -468,6 +485,7 @@ class SettingsPage(QWidget):
         worker.finished.connect(_handle_finished, Qt.ConnectionType.QueuedConnection)
         worker.finished.connect(thread.quit)
         self._threads.append(thread)
+        self._workers.append(worker)
         thread.start()
 
     # -- Darstellung ------------------------------------------------------------------
@@ -521,10 +539,13 @@ class SettingsPage(QWidget):
             self._on_update_checked(result)
             if thread in self._threads:
                 self._threads.remove(thread)
+            if worker in self._workers:
+                self._workers.remove(worker)
 
         worker.finished.connect(_handle_finished, Qt.ConnectionType.QueuedConnection)
         worker.finished.connect(thread.quit)
         self._threads.append(thread)
+        self._workers.append(worker)
         thread.start()
 
     def _on_update_checked(self, info: UpdateInfo | None) -> None:

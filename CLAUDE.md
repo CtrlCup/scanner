@@ -39,8 +39,19 @@ lautlos (Icon bleibt unsichtbar) — dort sind nur Hex-/Named-/`rgb()`-Farben zu
   (siehe unten), da native Titelleisten sich zwischen den Plattformen sichtbar unterscheiden.
   Siehe `src/scanner_app/ui/main_window.py` (`_ResizableRoot`, `MainWindow`) und
   `src/scanner_app/ui/widgets/window_chrome.py` (`TitleBar`, `IconRail`).
+- **`QApplication.setStyle("Fusion")` ist Pflicht** (`main.py`), nicht optional/kosmetisch:
+  native Stile (v.a. Windows' `windowsvista`) zeichnen für Buttons/Slider/ComboBoxen eigene
+  Chrome-Elemente, die eigenes QSS (abgerundete Ecken, benutzerdefinierte Slider-Handles) nur
+  teilweise überschreiben kann — sichtbar als eckige, nicht abgerundete Buttons bzw. graue
+  Ränder um Slider-Handles unter Windows, obwohl auf Linux (bzw. im hiesigen Offscreen-
+  Testsetup) alles korrekt aussah. Ohne `setStyle("Fusion")` ist das plattformübergreifende
+  Pixel-Identität-Ziel (siehe oben) nicht erreichbar.
 - **Scanner-Zugriff:** `python-sane` unter Linux (SANE), WIA via `pywin32`-COM-Automation unter
-  Windows — siehe `src/scanner_app/backend/`
+  Windows — siehe `src/scanner_app/backend/`. WIA/COM-Objekte sind apartment-gebunden (STA):
+  `WiaScannerBackend` hält ihr `WIA.DeviceManager`-COM-Objekt daher `threading.local()` (mit
+  `pythoncom.CoInitialize()` pro Thread) statt als geteiltes Instanzattribut — ein aus dem
+  Haupt-Thread erzeugtes COM-Objekt, das der Scan-Hintergrund-Thread (`MainWindow._ScanWorker`)
+  weiterverwendet, kann je nach Windows-Version ohne Exception dauerhaft blockieren.
 - **PDF/Bild:** `Pillow` (Bildbearbeitung/Rotation/Thumbnails), `img2pdf` (verlustfreie
   Bild→PDF-Konvertierung), `pypdf` (Seiten löschen/neu anordnen/rotieren in bestehendem PDF)
 - **OCR:** `ocrmypdf` (wrapt Tesseract, fügt durchsuchbare Textebene ins PDF ein). Benötigt
@@ -67,6 +78,25 @@ Release-Workflow (`.github/workflows/release.yml`) läuft bei jedem Push auf `ma
 bei releasefähigen Commits automatisch Git-Tag (`vX.Y.Z`), GitHub-Release und aktualisiert
 `CHANGELOG.md`. `.github/workflows/ci.yml` führt bei jedem Push/PR Tests + Lint auf Linux und
 Windows aus.
+
+## QThread-Worker: Referenz auf das Worker-Objekt selbst behalten
+
+Beim Muster `thread = QThread(); worker = SomeWorker(); worker.moveToThread(thread); ...` reicht
+es **nicht**, nur `thread` in einer Instanzliste/-variable am Leben zu halten — wird `worker`
+nirgends zusätzlich referenziert, kann Pythons Garbage Collector es einsammeln, sobald die
+aufrufende Methode zurückkehrt. Die Signal/Slot-Verbindung (`worker.finished.connect(...)`)
+schützt in PySide6 **nicht** zuverlässig davor. Symptom: der Worker läuft im Hintergrund-Thread
+zwar durch, sein `finished`/`failed`-Signal kommt aber nie beim UI-Thread an — sichtbar als eine
+UI, die dauerhaft im „lädt …"-Zustand hängen bleibt, ohne jede Fehlermeldung. Dieser Bug war real
+und per Test reproduzierbar (nicht nur eine Windows-Vermutung) in `SettingsPage._run_in_background()`
+/`_start_update_check()`, behoben durch eine zusätzliche `self._workers`-Liste analog zu
+`self._threads`. Beim Schreiben neuer Hintergrund-Worker immer **beide** Objekte (Thread UND
+Worker) in einer Instanzvariable halten, bis der Worker fertig ist — siehe `MainWindow._start_scan()`/
+`_start_auto_update()` für das korrekte Muster (`self._scan_worker`/`self._update_worker`).
+
+Zusätzlich gilt seither für **jeden** Worker: `run()` muss jede Exception abfangen und in jedem
+Fall ein Terminalsignal (`finished`/`failed`) emittieren — ein unerwarteter, nicht abgefangener
+Fehlertyp hätte sonst denselben "hängt für immer"-Effekt, unabhängig vom Referenz-Bug oben.
 
 ## Bekannte Einschränkung dieser Dev-Umgebung
 

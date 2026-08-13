@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 
 from scanner_app import windows_updater
 from scanner_app.app_settings import DEFAULT_FILENAME_PATTERN, AppSettings
-from scanner_app.backend import ScannerBackendError, get_backend
+from scanner_app.backend import get_backend
 from scanner_app.backend.base import ScannerDevice, ScanOptions
 from scanner_app.models.document import Document, DocumentType, generate_filename
 from scanner_app.ocr.ocr_engine import OcrError
@@ -47,7 +47,11 @@ class _ScanWorker(QObject):
     laufen, sonst friert das ganze Fenster während des Scans ein (siehe Issue #7).
     """
 
-    finished = Signal(Path)
+    # Signal(object) statt Signal(Path): pathlib.Path ist kein bei Qt registrierter
+    # Metatyp — über eine QueuedConnection (zwingend bei Cross-Thread-Signalen) hinweg ist
+    # `object` die verlässlichere Wahl für einen beliebigen Python-Typ, siehe auch
+    # `_UpdateCheckWorker.finished` in settings_page.py, das denselben Ansatz nutzt.
+    finished = Signal(object)
     failed = Signal(str)
 
     def __init__(self, backend, device: ScannerDevice, options: ScanOptions, target: Path) -> None:
@@ -58,9 +62,14 @@ class _ScanWorker(QObject):
         self._target = target
 
     def run(self) -> None:
+        # Bewusst jede Exception abgefangen, nicht nur ScannerBackendError: ein unerwarteter
+        # Fehler (z.B. eine rohe COM-Exception aus dem WIA-Backend) darf niemals dazu führen,
+        # dass weder finished noch failed emittiert wird — sonst bleibt der QThread für immer
+        # aktiv und die UI hängt dauerhaft im "Scan läuft…"-Zustand fest, ohne dass der Nutzer
+        # je wieder Kontrolle bekommt.
         try:
             self._backend.scan_page(self._device, self._options, self._target)
-        except ScannerBackendError as exc:
+        except Exception as exc:  # noqa: BLE001 - siehe Kommentar oben
             self.failed.emit(str(exc))
             return
         self.finished.emit(self._target)
@@ -98,6 +107,9 @@ class _UpdateInstallWorker(QObject):
                 cancel_check=lambda: self._cancelled,
             )
         except windows_updater.UpdateInstallError as exc:
+            self.failed.emit(str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001 - Sicherheitsnetz, siehe _ScanWorker.run()
             self.failed.emit(str(exc))
             return
         self.succeeded.emit(path)
@@ -323,6 +335,11 @@ class MainWindow(QMainWindow):
     def _perform_scan(self, *, restart: bool) -> None:
         if self._scan_thread is not None:
             return  # Ein Scan läuft bereits — Doppelklicks/Shortcut-Wiederholung ignorieren.
+
+        # Scan-Auslöser (Rail-Icon, Strg+Eingabe/Strg+N) funktionieren auch von der
+        # Einstellungsseite aus — dort soll der Klick zur Scanner-Ansicht zurückführen,
+        # statt unsichtbar im Hintergrund zu scannen.
+        self._show_scanner_page()
 
         filetype = self.settings_panel.current_document_type()
         start_new = (

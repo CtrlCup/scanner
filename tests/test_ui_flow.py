@@ -131,6 +131,24 @@ def test_cancel_scan_discards_result(window):
     assert window.document.pages == []
 
 
+def test_scan_recovers_ui_after_unexpected_backend_exception(window):
+    # Regression: _ScanWorker.run() fing früher nur ScannerBackendError ab — jede andere
+    # Exception (z.B. eine rohe COM-Exception aus dem WIA-Backend) ließ weder finished noch
+    # failed emittieren, der QThread lief für immer weiter und die UI blieb dauerhaft im
+    # "Scan läuft…"-Zustand hängen. Jetzt muss auch ein unerwarteter Fehlertyp die UI
+    # zuverlässig wieder freigeben.
+    def raise_unexpected(_device, _options, _output_path):
+        raise RuntimeError("unerwarteter Treiberfehler")
+
+    window.backend.scan_page = raise_unexpected
+    with patch("scanner_app.ui.main_window.QMessageBox"):
+        window._on_scan_requested()
+        _wait_for_scan(window)
+    assert window.settings_panel._scan_stack.currentIndex() == 0
+    assert window.settings_panel._device_combo.isEnabled()
+    assert window.document.pages == []
+
+
 def test_scan_default_mode_append_adds_to_existing_document(window):
     window.settings.scan_default_mode = "append"
     _scan(window)
@@ -273,6 +291,15 @@ def test_gear_icon_navigates_to_settings_page_and_back(window):
     assert window._stack.currentWidget() is not window.settings_page
 
 
+def test_rail_scan_icon_returns_to_scanner_page_from_settings(window):
+    window._icon_rail.settingsRequested.emit()
+    assert window._stack.currentWidget() is window.settings_page
+
+    window._icon_rail.scanRequested.emit()
+    assert window._stack.currentWidget() is not window.settings_page
+    _wait_for_scan(window)
+
+
 def test_check_for_updates_click_shows_searching_state(window):
     # check_for_update gemockt, damit der Test nicht auf einen echten Netzwerkaufruf wartet.
     page = SettingsPage(window.settings)
@@ -286,6 +313,47 @@ def test_check_for_updates_click_shows_searching_state(window):
         # Wartet aktiv auf den Hintergrund-Thread, bevor die Seite zerstört wird — Qt darf
         # nie einen QThread zerstören, während sein Worker noch läuft (harter Absturz statt
         # nur einer Warnung, siehe CLAUDE.md).
+        page.shutdown()
+        page.close()
+
+
+def test_check_for_updates_completes_and_reenables_button(window):
+    # Regression: die vorige Version dieses Tests prüfte nur den "Suche…"-Zwischenzustand,
+    # nie die tatsächliche Fertigstellung — dabei ist genau das der Zustand, der laut
+    # Nutzer-Feedback in echten Läufen dauerhaft hängen blieb.
+    page = SettingsPage(window.settings)
+    try:
+        with patch("scanner_app.ui.settings_page.check_for_update", return_value=None):
+            page._on_check_updates_clicked()
+            app = QApplication.instance()
+            elapsed = 0
+            while not page._check_update_button.isEnabled() and elapsed < 3000:
+                app.processEvents()
+                time.sleep(0.01)
+                elapsed += 10
+        assert page._check_update_button.isEnabled()
+        assert "aktuell" in page._update_status_label.text()
+    finally:
+        page.shutdown()
+        page.close()
+
+
+def test_check_for_updates_recovers_after_unexpected_exception(window):
+    # Regression: _UpdateCheckWorker.run() emittierte früher gar kein Signal, wenn
+    # check_for_update() (entgegen seines eigenen Vertrags) doch einmal geworfen hätte —
+    # der QThread lief dann für immer weiter und "Suche nach Updates…" blieb stehen.
+    page = SettingsPage(window.settings)
+    try:
+        with patch("scanner_app.ui.settings_page.check_for_update", side_effect=RuntimeError("kaputt")):
+            page._on_check_updates_clicked()
+            app = QApplication.instance()
+            elapsed = 0
+            while not page._check_update_button.isEnabled() and elapsed < 3000:
+                app.processEvents()
+                time.sleep(0.01)
+                elapsed += 10
+        assert page._check_update_button.isEnabled()
+    finally:
         page.shutdown()
         page.close()
 
